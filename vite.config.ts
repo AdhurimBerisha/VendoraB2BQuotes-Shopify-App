@@ -49,7 +49,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    reactRouter(),
+    !process.env.VITEST && reactRouter(),
     tsconfigPaths(),
   ],
   build: {
