@@ -26,6 +26,9 @@
     "db:down": "docker compose down"
   },
   "type": "module",
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "engines": {
     "node": ">=22.12"
   },
@@ -44,7 +47,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "7.18.2",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@shopify/api-codegen-preset": "^1.2.0",
@@ -63,6 +67,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "graphql-config": "^5.1.1",
     "prettier": "^3.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^6.3.6",
     "vitest": "^3.2.7"

@@ -1,191 +1,125 @@
-import type { Quote } from "@prisma/client";
-import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
+import type { Prisma } from "@prisma/client";
 import db from "../db.server";
-import { enqueue, getBoss } from "../jobs/queue.server";
+import { ConflictError, NotFoundError, UserError } from "../lib/errors";
+import { getCompanyLocation } from "../shopify/companies.server";
+import type { StaffActor } from "./actor";
+import { audit } from "./audit.server";
 
-type Line = { variantId: string; quantity: number };
+type QuoteStatus =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "SENT"
+  | "ORDERED"
+  | "DECLINED"
+  | "EXPIRED"
+  | "CANCELLED";
 
-// ponytail: draftOrderCreate has no @idempotent support, so a crashed attempt is only
-// reclaimed after STALE_MS and found again by tag. Relies on Shopify's draft-order search
-// index catching up within this window; switch to @idempotent if Shopify adds it.
-export const STALE_MS = 2 * 60_000;
+// Which statuses each action may start from.
+const TRANSITIONS = {
+  submit: ["DRAFT"],
+  approve: ["PENDING_APPROVAL"],
+  reject: ["PENDING_APPROVAL"],
+  send: ["APPROVED"],
+  revise: ["APPROVED", "SENT", "DECLINED", "EXPIRED"],
+  order: ["SENT"],
+  decline: ["SENT"],
+  expire: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"],
+  cancel: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "DECLINED", "EXPIRED"],
+} as const satisfies Record<string, readonly QuoteStatus[]>;
+type QuoteAction = keyof typeof TRANSITIONS;
 
-export const quoteTag = (quoteId: string) => `vendora-quote-${quoteId}`;
-
-export async function createQuote(
-  admin: AdminApiContext,
-  shop: string,
-  input: { locationId: unknown; variantId: unknown; quantity: unknown },
-) {
-  const { locationId, variantId } = input;
-  const quantity = Number(input.quantity);
-  if (
-    typeof locationId !== "string" ||
-    !locationId.startsWith("gid://shopify/CompanyLocation/") ||
-    typeof variantId !== "string" ||
-    !variantId.startsWith("gid://shopify/ProductVariant/") ||
-    !Number.isInteger(quantity) ||
-    quantity < 1 ||
-    quantity > 10_000
-  ) {
-    throw new Error("Invalid quote input");
-  }
-
-  // Derive company + contact from Shopify instead of trusting the client.
-  const response = await admin.graphql(
-    `#graphql
-    query VendoraQuoteCompanyLocation($id: ID!) {
-      companyLocation(id: $id) {
-        id
-        company { id mainContact { id customer { id } } }
-      }
-    }`,
-    { variables: { id: locationId } },
-  );
-  const { data } = await response.json();
-  const company = data?.companyLocation?.company;
-  if (!company) throw new Error("Company location not found");
-  if (!company.mainContact) {
-    throw new Error(
-      "This company has no main contact. Set one in Shopify admin → Customers → Companies.",
-    );
-  }
-
-  const lines: Line[] = [{ variantId, quantity }];
-  return db.quote.create({
-    data: {
-      shop,
-      companyId: company.id,
-      companyLocationId: locationId,
-      companyContactId: company.mainContact.id,
-      contactCustomerId: company.mainContact.customer?.id ?? null,
-      lines,
-    },
-  });
-}
-
-// Called by the Convert button. The status change and the job are one transaction,
-// so a QUEUED quote always has a job and a job always has a QUEUED quote.
-export async function requestConversion(shop: string, quoteId: string) {
-  await getBoss(); // start pg-boss outside the transaction (see enqueue)
-  return db.$transaction(async (tx) => {
-    const { count } = await tx.quote.updateMany({
-      where: { id: quoteId, shop, status: { in: ["DRAFT", "FAILED"] } },
-      data: { status: "QUEUED", lastError: null },
-    });
-    if (count === 1) {
-      await enqueue("sync-draft-order", { shop, quoteId }, { singletonKey: quoteId, tx });
-      console.log("conversion queued", { shop, quoteId });
-    }
-    return tx.quote.findFirstOrThrow({ where: { id: quoteId, shop } });
-  });
-}
-
-// Thrown when another attempt holds the quote; the job throws so pg-boss retries later.
-export class ConversionInFlight extends Error {}
-
-// Runs inside the sync-draft-order job. Status: DRAFT → QUEUED → CONVERTING → CONVERTED | FAILED.
-export async function convertQuote(
-  admin: AdminApiContext,
+// Atomic status change: succeeds only if the quote is still in an allowed "from" status.
+const transition = async (
+  tx: Prisma.TransactionClient,
   shop: string,
   quoteId: string,
-) {
-  // Atomic claim: only one caller moves the quote into CONVERTING.
-  const now = new Date();
-  const { count } = await db.quote.updateMany({
-    where: {
-      id: quoteId,
-      shop,
-      OR: [
-        { status: "QUEUED" },
-        {
-          status: "CONVERTING",
-          updatedAt: { lt: new Date(now.getTime() - STALE_MS) },
-        },
-      ],
-    },
-    data: { status: "CONVERTING", updatedAt: now, lastError: null },
+  action: QuoteAction,
+  to: QuoteStatus,
+  extra: Prisma.QuoteUpdateManyMutationInput = {},
+) => {
+  const { count } = await tx.quote.updateMany({
+    where: { id: quoteId, shop, status: { in: [...TRANSITIONS[action]] } },
+    data: { status: to, ...extra },
   });
-  const quote = await db.quote.findFirstOrThrow({ where: { id: quoteId, shop } });
-  if (count === 0) {
-    if (quote.status === "CONVERTING") {
-      throw new ConversionInFlight(`Quote ${quoteId} is being converted by another attempt`);
-    }
-    return quote; // CONVERTED / FAILED / DRAFT: nothing to do
+  if (count !== 1) throw new ConflictError("quote.errors.invalidTransition", { action });
+};
+
+// Company, contact and currency come from Shopify, never from the client.
+const createQuote = async (actor: StaffActor, input: { locationId: string }) => {
+  const location = await getCompanyLocation(actor.admin, input.locationId);
+  if (!location) throw new UserError("quote.errors.locationNotFound");
+  const contact = location.company.mainContact;
+  if (!contact) {
+    throw new UserError("quote.errors.noMainContact", { company: location.company.name });
   }
 
-  let draftOrderId: string;
-  try {
-    draftOrderId =
-      (await findDraftOrderId(admin, quote.id)) ??
-      (await createDraftOrder(admin, quote));
-  } catch (error) {
-    if (error instanceof DraftOrderUserErrors) {
-      // Shopify rejected the input, so nothing was created: safe to retry right away.
-      return db.quote.update({
-        where: { id: quote.id },
-        data: { status: "FAILED", lastError: error.message },
-      });
-    }
-    // Ambiguous (network, timeout, 5xx): Shopify may have created it. Stay CONVERTING
-    // so only a stale reclaim retries, and that retry finds the order by tag.
-    throw error;
-  }
-
-  return db.quote.update({
-    where: { id: quote.id },
-    data: { status: "CONVERTED", draftOrderId },
-  });
-}
-
-class DraftOrderUserErrors extends Error {}
-
-async function findDraftOrderId(admin: AdminApiContext, quoteId: string) {
-  const response = await admin.graphql(
-    `#graphql
-    query VendoraQuoteDraftOrderByTag($query: String!) {
-      draftOrders(first: 1, query: $query) {
-        nodes { id }
-      }
-    }`,
-    { variables: { query: `tag:'${quoteTag(quoteId)}'` } },
-  );
-  const { data } = await response.json();
-  return data?.draftOrders.nodes[0]?.id ?? null;
-}
-
-async function createDraftOrder(admin: AdminApiContext, quote: Quote) {
-  const response = await admin.graphql(
-    `#graphql
-    mutation VendoraQuoteDraftOrderCreate($input: DraftOrderInput!) {
-      draftOrderCreate(input: $input) {
-        draftOrder { id }
-        userErrors { field message }
-      }
-    }`,
-    {
-      variables: {
-        input: {
-          purchasingEntity: {
-            purchasingCompany: {
-              companyId: quote.companyId,
-              companyLocationId: quote.companyLocationId,
-              companyContactId: quote.companyContactId,
-            },
-          },
-          lineItems: quote.lines as Line[],
-          tags: [quoteTag(quote.id)],
-        },
+  return db.$transaction(async (tx) => {
+    // The row lock on Shop hands out numbers one at a time: no gaps from races, no duplicates.
+    const shop = await tx.shop.update({
+      where: { id: actor.shop },
+      data: { nextQuoteNumber: { increment: 1 } },
+    });
+    const quote = await tx.quote.create({
+      data: {
+        shop: actor.shop,
+        number: shop.nextQuoteNumber - 1,
+        companyId: location.company.id,
+        companyLocationId: location.id,
+        companyContactId: contact.id,
+        contactCustomerId: contact.customer?.id ?? null,
+        currencyCode: location.currency,
+        assignedToUserId: actor.userId,
+        expiresAt: new Date(Date.now() + shop.defaultExpiryDays * 86_400_000), // end of day in shop tz: M2.9
       },
+    });
+    const firstVersion = await tx.quoteVersion.create({
+      data: { quoteId: quote.id, versionNumber: 1, createdByUserId: actor.userId },
+    });
+    await tx.quote.update({ where: { id: quote.id }, data: { currentVersionId: firstVersion.id } });
+    await audit(tx, actor, quote.id, "quote.created", { number: quote.number });
+    console.log("quote created", { shop: actor.shop, quoteId: quote.id, number: quote.number });
+    return { ...quote, currentVersionId: firstVersion.id };
+  });
+};
+
+const getQuote = async (shop: string, id: string) => {
+  const quote = await db.quote.findFirst({
+    where: { id, shop },
+    include: {
+      currentVersion: { include: { lines: { orderBy: { position: "asc" } } } },
+      versions: { orderBy: { versionNumber: "asc" } },
     },
-  );
-  const { data } = await response.json();
-  const result = data?.draftOrderCreate;
-  if (result?.userErrors?.length) {
-    throw new DraftOrderUserErrors(
-      result.userErrors.map((e) => e.message).join("; "),
-    );
-  }
-  if (!result?.draftOrder) throw new Error("draftOrderCreate returned no draft order");
-  return result.draftOrder.id;
-}
+  });
+  if (!quote) throw new NotFoundError();
+  return quote;
+};
+
+const listQuotes = async (
+  shop: string,
+  filters: {
+    status?: QuoteStatus;
+    companyId?: string;
+    number?: number;
+    cursor?: string;
+    take?: number;
+  } = {},
+) => {
+  const take = Math.min(filters.take ?? 25, 100);
+  const rows = await db.quote.findMany({
+    where: { shop, status: filters.status, companyId: filters.companyId, number: filters.number },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
+    include: { currentVersion: { select: { total: true, versionNumber: true } } },
+  });
+  return {
+    quotes: rows.slice(0, take),
+    nextCursor: rows.length > take ? rows[take - 1].id : null,
+  };
+};
+
+const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
+
+export { TRANSITIONS, createQuote, getQuote, listQuotes, quoteLabel, transition };
+export type { QuoteAction, QuoteStatus };

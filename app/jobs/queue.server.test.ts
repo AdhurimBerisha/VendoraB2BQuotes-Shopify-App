@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, expect, test } from "vitest";
 import db from "../db.server";
 import { redactShop } from "../models/privacy.server";
-import { requestConversion } from "../models/quote.server";
+import { ConflictError } from "../lib/errors";
+import { requestSync } from "../models/sync.server";
+import { testQuote } from "../test/factories";
 import { enqueue, getBoss } from "./queue.server";
 
 // Real pg-boss on the test database: proves jobs and state changes commit together.
@@ -21,20 +23,15 @@ const jobsWith = async (key: string, value: string) => {
   return Number(rows[0].count);
 };
 
-test("requestConversion twice: quote QUEUED once, exactly one job", async () => {
-  const quote = await db.quote.create({
-    data: {
-      shop: SHOP,
-      companyId: "gid://shopify/Company/1",
-      companyLocationId: "gid://shopify/CompanyLocation/1",
-      companyContactId: "gid://shopify/CompanyContact/1",
-      lines: [],
-    },
-  });
+test("requestSync twice: quote QUEUED once, exactly one job", async () => {
+  const quote = await testQuote(SHOP);
+  const actor = { type: "SYSTEM" as const, shop: SHOP, reason: "test" };
 
-  expect((await requestConversion(SHOP, quote.id)).status).toBe("QUEUED");
-  expect((await requestConversion(SHOP, quote.id)).status).toBe("QUEUED");
+  await requestSync(actor, quote.id);
+  await expect(requestSync(actor, quote.id)).rejects.toBeInstanceOf(ConflictError);
 
+  const saved = await db.quote.findUniqueOrThrow({ where: { id: quote.id } });
+  expect(saved.syncStatus).toBe("QUEUED");
   expect(await jobsWith("quoteId", quote.id)).toBe(1);
 });
 

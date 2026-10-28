@@ -34,31 +34,111 @@ model Session {
 }
 
 model Quote {
-  id                String   @id @default(cuid())
-  shop              String
-  companyId         String
-  companyLocationId String
-  companyContactId  String
-  contactCustomerId String? // the contact's customer gid → customers/redact can match without Shopify
-  lines             Json // [{ variantId, quantity }]
-  status            String   @default("DRAFT") // DRAFT | CONVERTING | CONVERTED | FAILED
-  draftOrderId      String?
-  lastError         String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   String         @id @default(cuid())
+  shop                 String
+  number               Int // shown as quotePrefix + number, e.g. Q-1001
+  status               String         @default("DRAFT") // QuoteStatus in app/models/quote.server.ts
+  companyId            String
+  companyLocationId    String
+  companyContactId     String
+  contactCustomerId    String? // the contact's customer gid → customers/redact can match without Shopify
+  currencyCode         String // the location's currency (D-14)
+  currentVersionId     String?        @unique
+  currentVersion       QuoteVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions             QuoteVersion[] @relation("QuoteVersions")
+  assignedToUserId     BigInt?
+  expiresAt            DateTime?
+  draftOrderId         String?
+  syncStatus           String         @default("NONE") // NONE | QUEUED | SYNCING | SYNCED | FAILED
+  syncError            String?
+  syncClaimedAt        DateTime?
+  syncedVersionId      String?
+  invoiceSentVersionId String?
+  shopifyUpdatedAt     DateTime?
+  orderId              String?
+  attention            Json?
+  lockVersion          Int            @default(0) // optimistic lock for edits
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  @@index([shop])
+  @@unique([shop, number])
+  @@index([shop, status, updatedAt])
+  @@index([shop, companyId])
+  @@index([shop, expiresAt])
+  @@index([shop, draftOrderId])
+}
+
+model QuoteVersion {
+  id               String      @id @default(cuid())
+  quoteId          String
+  quote            Quote       @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
+  currentOf        Quote?      @relation("CurrentVersion")
+  versionNumber    Int
+  quoteDiscountPct Decimal?    @db.Decimal(7, 4)
+  listTotal        Decimal     @default(0) @db.Decimal(14, 4)
+  subtotal         Decimal     @default(0) @db.Decimal(14, 4)
+  discountTotal    Decimal     @default(0) @db.Decimal(14, 4)
+  total            Decimal     @default(0) @db.Decimal(14, 4)
+  note             String?
+  internalNote     String?
+  createdByUserId  BigInt?
+  lockedAt         DateTime? // set when submitted/sent; locked versions are never edited
+  createdAt        DateTime    @default(now())
+  lines            QuoteLine[]
+
+  @@unique([quoteId, versionNumber])
+}
+
+model QuoteLine {
+  id            String       @id @default(cuid())
+  versionId     String
+  version       QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  position      Int
+  variantId     String
+  productId     String
+  sku           String?
+  titleSnapshot String
+  quantity      Int
+  catalogPrice  Decimal      @db.Decimal(14, 4)
+  overridePrice Decimal?     @db.Decimal(14, 4)
+  discountPct   Decimal?     @db.Decimal(7, 4)
+  lineTotal     Decimal      @db.Decimal(14, 4)
+  problems      Json?
+
+  @@index([variantId])
+}
+
+// Append-only history of every change to a quote.
+model AuditEvent {
+  id        String   @id @default(cuid())
+  shop      String
+  quoteId   String?
+  actorType String // STAFF | CUSTOMER | SYSTEM | WEBHOOK
+  actorId   String?
+  action    String // e.g. quote.created (list in roadmap/dev/M2.1)
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([shop, quoteId, createdAt])
 }
 
 model Shop {
-  id            String    @id // "abc.myshopify.com"
-  shopGid       String? // gid://shopify/Shop/123
-  installedAt   DateTime  @default(now())
-  uninstalledAt DateTime?
-  timezone      String    @default("UTC") // shop.ianaTimezone
-  currencyCode  String    @default("USD")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                String    @id // "abc.myshopify.com"
+  shopGid           String? // gid://shopify/Shop/123
+  installedAt       DateTime  @default(now())
+  uninstalledAt     DateTime?
+  timezone          String    @default("UTC") // shop.ianaTimezone
+  currencyCode      String    @default("USD")
+  nextQuoteNumber   Int       @default(1001)
+  quotePrefix       String    @default("Q-")
+  defaultExpiryDays Int       @default(30)
+  approvalRules     Json      @default("{\"maxDiscountPct\":15,\"maxTotalByCurrency\":{},\"alwaysRequire\":false,\"requireDifferentApprover\":true}")
+  reserveInventory  Boolean   @default(false)
+  notifyEmails      String[]  @default([])
+  logoUrl           String?
+  quoteTerms        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 model WebhookEvent {

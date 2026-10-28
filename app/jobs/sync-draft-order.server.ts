@@ -1,7 +1,7 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { unauthenticated } from "../shopify.server";
 import { isInstalled } from "../models/shop.server";
-import { convertQuote } from "../models/quote.server";
+import { runSync } from "../models/sync.server";
 
 type SyncDraftOrderJob = { shop: string; quoteId: string };
 type Deps = { getAdmin: (shop: string) => Promise<AdminApiContext> };
@@ -21,8 +21,8 @@ const runSyncDraftOrder = async (
     return;
   }
   const admin = await deps.getAdmin(shop);
-  const quote = await convertQuote(admin, shop, quoteId); // throws on unclear errors and ConversionInFlight
-  console.log("sync-draft-order done", { shop, quoteId, status: quote.status });
+  const quote = await runSync(admin, shop, quoteId); // throws on unclear errors and SyncInFlight
+  console.log("sync-draft-order done", { shop, quoteId, syncStatus: quote.syncStatus });
 };
 
 export { runSyncDraftOrder };

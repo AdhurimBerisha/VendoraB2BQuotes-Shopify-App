@@ -6,8 +6,9 @@ const customerGid = (id: number) => `gid://shopify/Customer/${id}`;
 // privacy.server.test.ts fails if a new shop-scoped model is added and forgotten.
 const redactShop = async (shop: string) => {
   await db.$transaction([
+    db.auditEvent.deleteMany({ where: { shop } }),
     db.privacyRequest.deleteMany({ where: { shop } }),
-    db.quote.deleteMany({ where: { shop } }),
+    db.quote.deleteMany({ where: { shop } }), // versions and lines cascade
     db.session.deleteMany({ where: { shop } }),
     db.shop.deleteMany({ where: { id: shop } }),
     db.webhookEvent.deleteMany({ where: { shop } }),
@@ -15,16 +16,26 @@ const redactShop = async (shop: string) => {
 };
 
 const redactCustomer = async (shop: string, customerId: number) => {
-  await db.quote.updateMany({
-    where: { shop, contactCustomerId: customerGid(customerId) },
-    data: { contactCustomerId: "redacted", companyContactId: "redacted" },
-  });
+  const gid = customerGid(customerId);
+  await db.$transaction([
+    db.quote.updateMany({
+      where: { shop, contactCustomerId: gid },
+      data: { contactCustomerId: "redacted", companyContactId: "redacted" },
+    }),
+    db.auditEvent.updateMany({
+      where: { shop, actorType: "CUSTOMER", actorId: gid },
+      data: { actorId: "redacted" },
+    }),
+  ]);
 };
 
 // Stores the customer's data for the merchant to hand over (download UI: M2.8).
 const collectCustomerData = async (shop: string, customerId: number) => {
   const gid = customerGid(customerId);
-  const quotes = await db.quote.findMany({ where: { shop, contactCustomerId: gid } });
+  const quotes = await db.quote.findMany({
+    where: { shop, contactCustomerId: gid },
+    include: { versions: { include: { lines: true }, orderBy: { versionNumber: "asc" } } },
+  });
   await db.privacyRequest.create({
     data: {
       shop,
@@ -32,11 +43,22 @@ const collectCustomerData = async (shop: string, customerId: number) => {
       customerGid: gid,
       result: quotes.map((quote) => ({
         id: quote.id,
+        number: quote.number,
         status: quote.status,
         companyId: quote.companyId,
         companyLocationId: quote.companyLocationId,
         companyContactId: quote.companyContactId,
-        lines: quote.lines,
+        currencyCode: quote.currencyCode,
+        versions: quote.versions.map((version) => ({
+          versionNumber: version.versionNumber,
+          total: version.total.toString(),
+          lines: version.lines.map((line) => ({
+            variantId: line.variantId,
+            title: line.titleSnapshot,
+            quantity: line.quantity,
+            lineTotal: line.lineTotal.toString(),
+          })),
+        })),
         draftOrderId: quote.draftOrderId,
         createdAt: quote.createdAt.toISOString(),
       })),

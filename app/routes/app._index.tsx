@@ -5,13 +5,31 @@ import type {
 } from "react-router";
 import { useEffect } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import { boundary, type AdminApiContext } from "@shopify/shopify-app-react-router/server";
+import { z } from "zod";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
-import { createQuote, requestConversion } from "../models/quote.server";
-import type { VendoraQuoteCompaniesQuery } from "../types/admin.generated";
+import { runAction, type ActionResult } from "../lib/action.server";
+import { UserError } from "../lib/errors";
+import { D, formatMoney } from "../lib/money";
+import { gid, parseForm, quantity } from "../lib/validation";
+import type { StaffActor } from "../models/actor";
+import { createQuote, listQuotes, quoteLabel } from "../models/quote.server";
+import { getShop } from "../models/shop.server";
+import { requestSync } from "../models/sync.server";
+import { saveDraftLines } from "../models/version.server";
+import { searchCompanies } from "../shopify/companies.server";
+import { getVariant } from "../shopify/products.server";
 
-type Company = VendoraQuoteCompaniesQuery["companies"]["nodes"][number];
+// ponytail: placeholder staff actor; M2.2 builds the real one from the online session.
+const staffActor = (shop: string, admin: AdminApiContext): StaffActor => ({
+  type: "STAFF",
+  shop,
+  userId: null,
+  name: "Staff",
+  role: "OWNER",
+  locale: "en",
+  admin,
+});
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -27,59 +45,83 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
   const { data: shopData } = await shopResponse.json();
 
-  let companies: Company[] = [];
+  let companies: Awaited<ReturnType<typeof searchCompanies>>["nodes"] = [];
   let b2bError: string | null = null;
   try {
-    const companiesResponse = await admin.graphql(
-      `#graphql
-      query VendoraQuoteCompanies {
-        companies(first: 50) {
-          nodes {
-            name
-            mainContact { id }
-            locations(first: 20) { nodes { id name } }
-          }
-        }
-      }`,
-    );
-    const { data } = await companiesResponse.json();
-    companies = data?.companies.nodes ?? [];
+    companies = (await searchCompanies(admin)).nodes;
   } catch (error) {
     if (error instanceof Response) throw error; // let re-auth redirects through
     b2bError = error instanceof Error ? error.message : String(error);
   }
+
+  const prefix = (await getShop(session.shop))?.quotePrefix ?? "Q-";
+  const { quotes } = await listQuotes(session.shop);
 
   return {
     plan: shopData?.shop.plan ?? null,
     variants: shopData?.productVariants.nodes ?? [],
     companies,
     b2bError,
-    quotes: await db.quote.findMany({
-      where: { shop: session.shop },
-      orderBy: { createdAt: "desc" },
-    }),
+    quotes: quotes.map((quote) => ({
+      id: quote.id,
+      label: quoteLabel(prefix, quote.number),
+      status: quote.status,
+      syncStatus: quote.syncStatus,
+      syncError: quote.syncError,
+      draftOrderId: quote.draftOrderId,
+      total: formatMoney(quote.currentVersion?.total ?? D(0), quote.currencyCode),
+    })),
   };
 };
+
+const createSchema = z.object({
+  intent: z.literal("create"),
+  locationId: gid("CompanyLocation"),
+  variantId: gid("ProductVariant"),
+  quantity,
+});
+const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min(1) });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const form = await request.formData();
+  const actor = staffActor(session.shop, admin);
 
-  try {
-    if (form.get("intent") === "create") {
-      await createQuote(admin, session.shop, {
-        locationId: form.get("locationId"),
-        variantId: form.get("variantId"),
-        quantity: form.get("quantity"),
-      });
-    } else {
-      await requestConversion(session.shop, String(form.get("quoteId")));
+  return runAction(async () => {
+    if (form.get("intent") === "sync") {
+      await requestSync(actor, parseForm(form, syncSchema).quoteId);
+      return null;
     }
-    return { error: null };
-  } catch (error) {
-    if (error instanceof Response) throw error;
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
+    const input = parseForm(form, createSchema);
+    const variant = await getVariant(admin, input.variantId);
+    if (!variant) throw new UserError("quote.errors.variantNotFound");
+    const quote = await createQuote(actor, { locationId: input.locationId });
+    // A new quote's lockVersion is 0. The line editor itself arrives with the admin UI (M2.8).
+    await saveDraftLines(
+      actor,
+      quote.id,
+      0,
+      [
+        {
+          variantId: variant.id,
+          productId: variant.product.id,
+          sku: variant.sku ?? null,
+          title: variant.product.title,
+          quantity: input.quantity,
+          catalogPrice: D(variant.price),
+        },
+      ],
+      null,
+    );
+    return null;
+  });
+};
+
+// ponytail: shows raw translation keys until app/locales arrives in M2.8.
+const errorText = (result: ActionResult<unknown> | undefined) => {
+  if (!result || result.ok) return null;
+  const params = Object.entries(result.error.params).map(([k, v]) => `${k}: ${v}`);
+  return [result.error.key, ...params].join(" · ");
 };
 
 export default function Index() {
@@ -87,10 +129,11 @@ export default function Index() {
     useLoaderData<typeof loader>();
   const createFetcher = useFetcher<typeof action>();
   const revalidator = useRevalidator();
+  const createError = errorText(createFetcher.data);
 
-  // Refresh every 3 s while a background conversion is running.
+  // Refresh every 3 s while a background sync is running.
   const inFlight = quotes.some(
-    (quote) => quote.status === "QUEUED" || quote.status === "CONVERTING",
+    (quote) => quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING",
   );
   useEffect(() => {
     if (!inFlight) return;
@@ -101,7 +144,7 @@ export default function Index() {
   }, [inFlight, revalidator]);
 
   return (
-    <s-page heading="Quotes (B2B draft-order PoC)">
+    <s-page heading="Quotes">
       <s-section heading="Store eligibility">
         <s-stack direction="inline" gap="base">
           <s-badge tone={plan?.shopifyPlus ? "success" : "warning"}>
@@ -127,7 +170,7 @@ export default function Index() {
               {companies.flatMap((company) =>
                 company.locations.nodes.map((location) => (
                   <s-option key={location.id} value={location.id}>
-                    {company.name} — {location.name}
+                    {company.name} — {location.name} ({location.currency})
                     {company.mainContact ? "" : " (no main contact)"}
                   </s-option>
                 )),
@@ -145,7 +188,7 @@ export default function Index() {
               name="quantity"
               value="1"
               min={1}
-              max={10000}
+              max={100000}
               step={1}
             ></s-number-field>
             <s-button
@@ -155,9 +198,7 @@ export default function Index() {
             >
               Create quote
             </s-button>
-            {createFetcher.data?.error && (
-              <s-banner tone="critical">{createFetcher.data.error}</s-banner>
-            )}
+            {createError && <s-banner tone="critical">{createError}</s-banner>}
           </s-stack>
         </createFetcher.Form>
       </s-section>
@@ -177,10 +218,11 @@ export default function Index() {
   );
 }
 
-const STATUS_LABELS: Record<string, string> = {
+const SYNC_LABELS: Record<string, string> = {
   QUEUED: "Waiting to sync",
-  CONVERTING: "Syncing…",
-  CONVERTED: "Converted",
+  SYNCING: "Syncing…",
+  SYNCED: "Draft order created",
+  FAILED: "Sync failed",
 };
 
 function QuoteRow({
@@ -188,23 +230,30 @@ function QuoteRow({
 }: {
   quote: {
     id: string;
+    label: string;
     status: string;
+    syncStatus: string;
+    syncError: string | null;
     draftOrderId: string | null;
-    lastError: string | null;
+    total: string;
   };
 }) {
   const fetcher = useFetcher<typeof action>();
-  const error = fetcher.data?.error ?? quote.lastError;
-  const canConvert = quote.status === "DRAFT" || quote.status === "FAILED";
+  const error = errorText(fetcher.data) ?? quote.syncError;
+  const canSync = quote.syncStatus === "NONE" || quote.syncStatus === "FAILED";
 
   return (
     <s-box padding="base" border="base" borderRadius="base">
       <s-stack direction="block" gap="small-200">
         <s-stack direction="inline" gap="base" alignItems="center">
-          <s-text type="strong">vendora-quote-{quote.id}</s-text>
-          <s-badge tone={quote.status === "CONVERTED" ? "success" : "auto"}>
-            {STATUS_LABELS[quote.status] ?? quote.status}
-          </s-badge>
+          <s-text type="strong">{quote.label}</s-text>
+          <s-badge>{quote.status}</s-badge>
+          <s-text>{quote.total}</s-text>
+          {quote.syncStatus !== "NONE" && (
+            <s-badge tone={quote.syncStatus === "SYNCED" ? "success" : "auto"}>
+              {SYNC_LABELS[quote.syncStatus] ?? quote.syncStatus}
+            </s-badge>
+          )}
           {quote.draftOrderId && (
             <s-link
               href={`shopify://admin/draft_orders/${quote.draftOrderId.split("/").pop()}`}
@@ -213,9 +262,9 @@ function QuoteRow({
               Open draft order
             </s-link>
           )}
-          {!quote.draftOrderId && canConvert && (
+          {!quote.draftOrderId && canSync && (
             <fetcher.Form method="post">
-              <input type="hidden" name="intent" value="convert" />
+              <input type="hidden" name="intent" value="sync" />
               <input type="hidden" name="quoteId" value={quote.id} />
               <s-button
                 type="submit"
