@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, expect, test } from "vitest";
+import { afterAll, beforeEach, expect, test, vi } from "vitest";
 import db from "../db.server";
+import { enqueue } from "../jobs/queue.server";
+import { runPrivacy } from "../jobs/privacy.server";
 import { redactShop } from "../models/privacy.server";
 import { webhookRequest } from "../test/webhook";
 import { action } from "./webhooks.compliance";
 
+vi.mock("../jobs/queue.server", () => ({ enqueue: vi.fn(async () => "job-id") }));
+const enqueueMock = vi.mocked(enqueue);
+
 const SHOP = `vitest-${randomUUID()}.myshopify.com`;
 const PATH = "/webhooks/compliance";
+
+beforeEach(() => enqueueMock.mockClear());
 
 afterAll(async () => {
   await redactShop(SHOP);
@@ -22,7 +29,7 @@ const callAction = async (request: Request) => {
   }
 };
 
-test("bad signature is rejected with 401 and nothing is recorded", async () => {
+test("bad signature is rejected with 401, nothing recorded or queued", async () => {
   const webhookId = randomUUID();
   const response = await callAction(
     webhookRequest(PATH, "shop/redact", SHOP, { shop_domain: SHOP }, { webhookId, badSignature: true }),
@@ -30,37 +37,35 @@ test("bad signature is rejected with 401 and nothing is recorded", async () => {
 
   expect(response.status).toBe(401);
   expect(await db.webhookEvent.count({ where: { id: webhookId } })).toBe(0);
+  expect(enqueueMock).not.toHaveBeenCalled();
 });
 
-test("valid shop/redact returns 200 and deletes the shop's data", async () => {
-  await db.shop.create({ data: { id: SHOP } });
-  await db.quote.create({
-    data: {
-      shop: SHOP,
-      companyId: "gid://shopify/Company/1",
-      companyLocationId: "gid://shopify/CompanyLocation/1",
-      companyContactId: "gid://shopify/CompanyContact/1",
-      lines: [],
-    },
-  });
-
-  const response = await callAction(webhookRequest(PATH, "shop/redact", SHOP, { shop_domain: SHOP }));
+test("valid webhook returns 200 and queues a privacy job", async () => {
+  const webhookId = randomUUID();
+  const response = await callAction(
+    webhookRequest(PATH, "shop/redact", SHOP, { shop_domain: SHOP }, { webhookId }),
+  );
 
   expect(response.status).toBe(200);
-  expect(await db.shop.count({ where: { id: SHOP } })).toBe(0);
-  expect(await db.quote.count({ where: { shop: SHOP } })).toBe(0);
+  expect(enqueueMock).toHaveBeenCalledWith("privacy", {
+    topic: "SHOP_REDACT",
+    shop: SHOP,
+    payload: { shop_domain: SHOP },
+    webhookId,
+  });
 });
 
-test("a failed delivery is forgotten so Shopify's retry is handled", async () => {
+test("a delivery that can't be queued is forgotten so Shopify's retry is handled", async () => {
+  enqueueMock.mockRejectedValueOnce(new Error("database down"));
   const webhookId = randomUUID();
-  // Unknown topic → the handler throws, standing in for any failure mid-handling.
-  const request = webhookRequest(PATH, "orders/create", SHOP, { customer: { id: 1 } }, { webhookId });
 
-  await expect(callAction(request)).rejects.toThrow("Unhandled privacy topic");
+  await expect(
+    callAction(webhookRequest(PATH, "customers/redact", SHOP, { customer: { id: 1 } }, { webhookId })),
+  ).rejects.toThrow("database down");
   expect(await db.webhookEvent.count({ where: { id: webhookId } })).toBe(0);
 });
 
-test("the same webhook delivered twice is handled once", async () => {
+test("the same webhook delivered twice is queued once", async () => {
   const webhookId = randomUUID();
   const body = { shop_domain: SHOP, customer: { id: 1 } };
 
@@ -71,7 +76,23 @@ test("the same webhook delivered twice is handled once", async () => {
     expect(response.status).toBe(200);
   }
 
-  expect(await db.privacyRequest.count({ where: { shop: SHOP } })).toBe(1); // handler ran once
+  expect(enqueueMock).toHaveBeenCalledTimes(1);
+});
+
+test("privacy job handles the request and marks the delivery processed", async () => {
+  const webhookId = randomUUID();
+  await db.webhookEvent.create({ data: { id: webhookId, shop: SHOP, topic: "CUSTOMERS_DATA_REQUEST" } });
+
+  await runPrivacy({
+    topic: "CUSTOMERS_DATA_REQUEST",
+    shop: SHOP,
+    payload: { customer: { id: 42 } },
+    webhookId,
+  });
+
+  expect(
+    await db.privacyRequest.count({ where: { shop: SHOP, customerGid: "gid://shopify/Customer/42" } }),
+  ).toBe(1);
   const event = await db.webhookEvent.findUniqueOrThrow({ where: { id: webhookId } });
   expect(event.processedAt).not.toBeNull();
 });
