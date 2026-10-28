@@ -36,7 +36,7 @@ export async function createQuote(
     query VendoraQuoteCompanyLocation($id: ID!) {
       companyLocation(id: $id) {
         id
-        company { id mainContact { id } }
+        company { id mainContact { id customer { id } } }
       }
     }`,
     { variables: { id: locationId } },
@@ -57,6 +57,7 @@ export async function createQuote(
       companyId: company.id,
       companyLocationId: locationId,
       companyContactId: company.mainContact.id,
+      contactCustomerId: company.mainContact.customer?.id ?? null,
       lines,
     },
   });

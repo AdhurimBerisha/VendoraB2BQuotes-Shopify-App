@@ -39,12 +39,48 @@ model Quote {
   companyId         String
   companyLocationId String
   companyContactId  String
+  contactCustomerId String? // the contact's customer gid → customers/redact can match without Shopify
   lines             Json // [{ variantId, quantity }]
   status            String   @default("DRAFT") // DRAFT | CONVERTING | CONVERTED | FAILED
   draftOrderId      String?
   lastError         String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([shop])
+}
+
+model Shop {
+  id            String    @id // "abc.myshopify.com"
+  shopGid       String? // gid://shopify/Shop/123
+  installedAt   DateTime  @default(now())
+  uninstalledAt DateTime?
+  timezone      String    @default("UTC") // shop.ianaTimezone
+  currencyCode  String    @default("USD")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model WebhookEvent {
+  id          String    @id // X-Shopify-Webhook-Id (unique per delivery)
+  eventId     String? // X-Shopify-Event-Id (same merchant action)
+  shop        String
+  topic       String
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  @@index([shop, receivedAt])
+}
+
+model PrivacyRequest {
+  id          String   @id @default(cuid())
+  shop        String
+  topic       String
+  customerGid String?
+  status      String   @default("READY") // READY | DELIVERED
+  result      Json?
+  createdAt   DateTime @default(now())
 
   @@index([shop])
 }

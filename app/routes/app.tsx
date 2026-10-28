@@ -4,9 +4,14 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
+import { getShop, upsertShopOnInstall } from "../models/shop.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+
+  // Backfill for shops installed before afterAuth existed, or if afterAuth failed.
+  const shop = await getShop(session.shop);
+  if (!shop || shop.uninstalledAt) await upsertShopOnInstall(admin, session.shop);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

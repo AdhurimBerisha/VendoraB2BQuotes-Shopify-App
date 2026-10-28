@@ -12,7 +12,10 @@ export type VendoraQuoteCompanyLocationQuery = { companyLocation?: AdminTypes.Ma
     Pick<AdminTypes.CompanyLocation, 'id'>
     & { company: (
       Pick<AdminTypes.Company, 'id'>
-      & { mainContact?: AdminTypes.Maybe<Pick<AdminTypes.CompanyContact, 'id'>> }
+      & { mainContact?: AdminTypes.Maybe<(
+        Pick<AdminTypes.CompanyContact, 'id'>
+        & { customer: Pick<AdminTypes.Customer, 'id'> }
+      )> }
     ) }
   )> };
 
@@ -46,11 +49,17 @@ export type VendoraQuoteCompaniesQuery = { companies: { nodes: Array<(
       & { mainContact?: AdminTypes.Maybe<Pick<AdminTypes.CompanyContact, 'id'>>, locations: { nodes: Array<Pick<AdminTypes.CompanyLocation, 'id' | 'name'>> } }
     )> } };
 
+export type VendoraShopInfoQueryVariables = AdminTypes.Exact<{ [key: string]: never; }>;
+
+
+export type VendoraShopInfoQuery = { shop: Pick<AdminTypes.Shop, 'id' | 'ianaTimezone' | 'currencyCode'> };
+
 interface GeneratedQueryTypes {
-  "#graphql\n    query VendoraQuoteCompanyLocation($id: ID!) {\n      companyLocation(id: $id) {\n        id\n        company { id mainContact { id } }\n      }\n    }": {return: VendoraQuoteCompanyLocationQuery, variables: VendoraQuoteCompanyLocationQueryVariables},
+  "#graphql\n    query VendoraQuoteCompanyLocation($id: ID!) {\n      companyLocation(id: $id) {\n        id\n        company { id mainContact { id customer { id } } }\n      }\n    }": {return: VendoraQuoteCompanyLocationQuery, variables: VendoraQuoteCompanyLocationQueryVariables},
   "#graphql\n    query VendoraQuoteDraftOrderByTag($query: String!) {\n      draftOrders(first: 1, query: $query) {\n        nodes { id }\n      }\n    }": {return: VendoraQuoteDraftOrderByTagQuery, variables: VendoraQuoteDraftOrderByTagQueryVariables},
   "#graphql\n    query VendoraQuoteShopAndVariants {\n      shop { plan { shopifyPlus partnerDevelopment } }\n      productVariants(first: 50) {\n        nodes { id title product { title } }\n      }\n    }": {return: VendoraQuoteShopAndVariantsQuery, variables: VendoraQuoteShopAndVariantsQueryVariables},
   "#graphql\n      query VendoraQuoteCompanies {\n        companies(first: 50) {\n          nodes {\n            name\n            mainContact { id }\n            locations(first: 20) { nodes { id name } }\n          }\n        }\n      }": {return: VendoraQuoteCompaniesQuery, variables: VendoraQuoteCompaniesQueryVariables},
+  "#graphql\n    query VendoraShopInfo {\n      shop { id ianaTimezone currencyCode }\n    }": {return: VendoraShopInfoQuery, variables: VendoraShopInfoQueryVariables},
 }
 
 interface GeneratedMutationTypes {

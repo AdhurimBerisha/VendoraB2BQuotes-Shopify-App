@@ -6,6 +6,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+import { upsertShopOnInstall } from "./models/shop.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -18,6 +19,17 @@ const shopify = shopifyApp({
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  hooks: {
+    // Runs on install, reinstall and new offline tokens. A failure must not block login:
+    // the app.tsx loader retries when the Shop row is missing or marked uninstalled.
+    afterAuth: async ({ session, admin }) => {
+      try {
+        await upsertShopOnInstall(admin, session.shop);
+      } catch (error) {
+        console.error("afterAuth shop upsert failed", { shop: session.shop, error });
+      }
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
