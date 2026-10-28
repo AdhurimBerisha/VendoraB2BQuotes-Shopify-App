@@ -22,9 +22,36 @@ Before you begin, you'll need to [download and install the Shopify CLI](https://
 shopify app init --template=https://github.com/Shopify/shopify-app-template-react-router
 ```
 
+### Local Database
+
+Vendora uses PostgreSQL 16 in Docker (requires Docker Desktop).
+
+```shell
+npm run db:up   # starts Postgres on localhost:5432 (databases: vendora, vendora_test)
+```
+
+Create `.env` and `.env.test` (both gitignored):
+
+```dotenv
+# .env
+DATABASE_URL="postgresql://vendora:vendora@localhost:5432/vendora?schema=public"
+```
+
+```dotenv
+# .env.test
+DATABASE_URL="postgresql://vendora:vendora@localhost:5432/vendora_test?schema=public"
+SHOPIFY_API_KEY="test-key"
+SHOPIFY_API_SECRET="test-secret"
+SHOPIFY_APP_URL="https://vendora.test"
+SCOPES="read_products,read_customers,write_draft_orders"
+```
+
+Then `npx prisma migrate deploy` and `npm test`.
+
 ### Local Development
 
 ```shell
+npm run db:up
 shopify app dev
 ```
 
