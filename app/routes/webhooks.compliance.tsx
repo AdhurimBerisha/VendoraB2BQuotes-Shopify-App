@@ -1,11 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
-import {
-  forgetWebhook,
-  markWebhookProcessed,
-  recordWebhookOnce,
-} from "../models/webhook-events.server";
-import { handlePrivacyWebhook } from "../models/privacy.server";
+import { enqueue } from "../jobs/queue.server";
+import { forgetWebhook, recordWebhookOnce } from "../models/webhook-events.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   // Throws a 401 Response on a bad HMAC (Shopify requires 401 for compliance webhooks).
@@ -13,16 +9,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   console.log("compliance webhook", { topic, shop, webhookId });
 
   if (await recordWebhookOnce({ webhookId, eventId, shop, topic })) {
-    // Inline for now (fast at current data sizes). M1.6 moves this into the `privacy` queue.
+    // Answer Shopify fast (5 s timeout); the privacy job does the work and retries on failure.
     try {
-      await handlePrivacyWebhook(topic, payload, shop);
+      await enqueue("privacy", { topic, shop, payload, webhookId });
     } catch (error) {
-      console.error("compliance webhook failed, Shopify will retry", { topic, shop, webhookId, error });
+      console.error("compliance webhook not queued, Shopify will retry", { topic, shop, webhookId, error });
       await forgetWebhook(webhookId);
       throw error; // non-2xx → Shopify retries the delivery
     }
-    // shop/redact already deleted this shop's WebhookEvent rows.
-    if (topic !== "SHOP_REDACT") await markWebhookProcessed(webhookId);
   }
   return new Response();
 };

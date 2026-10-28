@@ -3,11 +3,12 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { convertQuote, createQuote } from "../models/quote.server";
+import { createQuote, requestConversion } from "../models/quote.server";
 import type { VendoraQuoteCompaniesQuery } from "../types/admin.generated";
 
 type Company = VendoraQuoteCompaniesQuery["companies"]["nodes"][number];
@@ -72,7 +73,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         quantity: form.get("quantity"),
       });
     } else {
-      await convertQuote(admin, session.shop, String(form.get("quoteId")));
+      await requestConversion(session.shop, String(form.get("quoteId")));
     }
     return { error: null };
   } catch (error) {
@@ -85,6 +86,19 @@ export default function Index() {
   const { plan, variants, companies, b2bError, quotes } =
     useLoaderData<typeof loader>();
   const createFetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
+
+  // Refresh every 3 s while a background conversion is running.
+  const inFlight = quotes.some(
+    (quote) => quote.status === "QUEUED" || quote.status === "CONVERTING",
+  );
+  useEffect(() => {
+    if (!inFlight) return;
+    const timer = setInterval(() => {
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [inFlight, revalidator]);
 
   return (
     <s-page heading="Quotes (B2B draft-order PoC)">
@@ -163,6 +177,12 @@ export default function Index() {
   );
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  QUEUED: "Waiting to sync",
+  CONVERTING: "Syncing…",
+  CONVERTED: "Converted",
+};
+
 function QuoteRow({
   quote,
 }: {
@@ -175,6 +195,7 @@ function QuoteRow({
 }) {
   const fetcher = useFetcher<typeof action>();
   const error = fetcher.data?.error ?? quote.lastError;
+  const canConvert = quote.status === "DRAFT" || quote.status === "FAILED";
 
   return (
     <s-box padding="base" border="base" borderRadius="base">
@@ -182,16 +203,17 @@ function QuoteRow({
         <s-stack direction="inline" gap="base" alignItems="center">
           <s-text type="strong">vendora-quote-{quote.id}</s-text>
           <s-badge tone={quote.status === "CONVERTED" ? "success" : "auto"}>
-            {quote.status}
+            {STATUS_LABELS[quote.status] ?? quote.status}
           </s-badge>
-          {quote.draftOrderId ? (
+          {quote.draftOrderId && (
             <s-link
               href={`shopify://admin/draft_orders/${quote.draftOrderId.split("/").pop()}`}
               target="_top"
             >
               Open draft order
             </s-link>
-          ) : (
+          )}
+          {!quote.draftOrderId && canConvert && (
             <fetcher.Form method="post">
               <input type="hidden" name="intent" value="convert" />
               <input type="hidden" name="quoteId" value={quote.id} />

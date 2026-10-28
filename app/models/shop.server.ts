@@ -29,4 +29,9 @@ const markUninstalled = async (shop: string) => {
 
 const getShop = (shop: string) => db.shop.findUnique({ where: { id: shop } });
 
-export { getShop, markUninstalled, upsertShopOnInstall };
+const isInstalled = async (shop: string) => {
+  const record = await getShop(shop);
+  return record !== null && record.uninstalledAt === null;
+};
+
+export { getShop, isInstalled, markUninstalled, upsertShopOnInstall };

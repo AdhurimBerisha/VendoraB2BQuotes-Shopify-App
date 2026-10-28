@@ -1,6 +1,7 @@
 import type { Quote } from "@prisma/client";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
+import { enqueue, getBoss } from "../jobs/queue.server";
 
 type Line = { variantId: string; quantity: number };
 
@@ -63,6 +64,27 @@ export async function createQuote(
   });
 }
 
+// Called by the Convert button. The status change and the job are one transaction,
+// so a QUEUED quote always has a job and a job always has a QUEUED quote.
+export async function requestConversion(shop: string, quoteId: string) {
+  await getBoss(); // start pg-boss outside the transaction (see enqueue)
+  return db.$transaction(async (tx) => {
+    const { count } = await tx.quote.updateMany({
+      where: { id: quoteId, shop, status: { in: ["DRAFT", "FAILED"] } },
+      data: { status: "QUEUED", lastError: null },
+    });
+    if (count === 1) {
+      await enqueue("sync-draft-order", { shop, quoteId }, { singletonKey: quoteId, tx });
+      console.log("conversion queued", { shop, quoteId });
+    }
+    return tx.quote.findFirstOrThrow({ where: { id: quoteId, shop } });
+  });
+}
+
+// Thrown when another attempt holds the quote; the job throws so pg-boss retries later.
+export class ConversionInFlight extends Error {}
+
+// Runs inside the sync-draft-order job. Status: DRAFT → QUEUED → CONVERTING → CONVERTED | FAILED.
 export async function convertQuote(
   admin: AdminApiContext,
   shop: string,
@@ -75,7 +97,7 @@ export async function convertQuote(
       id: quoteId,
       shop,
       OR: [
-        { status: { in: ["DRAFT", "FAILED"] } },
+        { status: "QUEUED" },
         {
           status: "CONVERTING",
           updatedAt: { lt: new Date(now.getTime() - STALE_MS) },
@@ -85,7 +107,12 @@ export async function convertQuote(
     data: { status: "CONVERTING", updatedAt: now, lastError: null },
   });
   const quote = await db.quote.findFirstOrThrow({ where: { id: quoteId, shop } });
-  if (count === 0) return quote; // already converted or another attempt is in flight
+  if (count === 0) {
+    if (quote.status === "CONVERTING") {
+      throw new ConversionInFlight(`Quote ${quoteId} is being converted by another attempt`);
+    }
+    return quote; // CONVERTED / FAILED / DRAFT: nothing to do
+  }
 
   let draftOrderId: string;
   try {

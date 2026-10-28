@@ -5,6 +5,16 @@ import { createReadableStreamFromReadable } from "@react-router/node";
 import { type EntryContext } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import { startWorkers } from "./jobs/workers.server";
+
+// One worker set per server process. Set RUN_WORKERS=false on a web-only instance
+// once workers move to their own service (D-13).
+if (process.env.RUN_WORKERS !== "false" && process.env.NODE_ENV !== "test") {
+  startWorkers().catch((error) => {
+    globalThis.vendoraWorkersStarted = false; // let the next import retry
+    console.error("[workers] failed to start", error);
+  });
+}
 
 export const streamTimeout = 5000;
 
