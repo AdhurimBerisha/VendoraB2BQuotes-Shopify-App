@@ -1,3 +1,4 @@
 import { flatRoutes } from "@react-router/fs-routes";
 
-export default flatRoutes();
+// Tests can sit next to their route without becoming routes.
+export default flatRoutes({ ignoredRouteFiles: ["**/*.test.*"] });

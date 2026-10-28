@@ -1,6 +1,8 @@
+/// <reference types="vitest/config" />
 import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { loadTestEnv } from "./app/test/test-db-url";
 
 // Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176
 // Replace the HOST env var with SHOPIFY_APP_URL so that it doesn't break the Vite server.
@@ -49,9 +51,17 @@ export default defineConfig({
     },
   },
   plugins: [
-    reactRouter(),
+    !process.env.VITEST && reactRouter(),
     tsconfigPaths(),
   ],
+  test: process.env.VITEST
+    ? {
+        env: loadTestEnv(), // test workers see the test DB + fake Shopify credentials
+        globalSetup: ["app/test/global-setup.ts"],
+        fileParallelism: false, // one shared DB → run test files one at a time
+        testTimeout: 15_000,
+      }
+    : undefined,
   build: {
     assetsInlineLimit: 0,
   },

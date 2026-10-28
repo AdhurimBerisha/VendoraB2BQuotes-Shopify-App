@@ -19,7 +19,7 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  ignorePatterns: ["!**/.server", "!**/.client"],
+  ignorePatterns: ["!**/.server", "!**/.client", "app/types/"], // app/types: GraphQL codegen output
 
   // Base config
   extends: ["eslint:recommended"],

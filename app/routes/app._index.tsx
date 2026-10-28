@@ -1,349 +1,212 @@
-import { useEffect } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
+import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
+import db from "../db.server";
+import { convertQuote, createQuote } from "../models/quote.server";
+import type { VendoraQuoteCompaniesQuery } from "../types/admin.generated";
+
+type Company = VendoraQuoteCompaniesQuery["companies"]["nodes"][number];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
-  return null;
-};
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
+  const shopResponse = await admin.graphql(
     `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-            demoInfo: metafield(namespace: "$app", key: "demo_info") {
-              jsonValue
-            }
+    query VendoraQuoteShopAndVariants {
+      shop { plan { shopifyPlus partnerDevelopment } }
+      productVariants(first: 50) {
+        nodes { id title product { title } }
+      }
+    }`,
+  );
+  const { data: shopData } = await shopResponse.json();
+
+  let companies: Company[] = [];
+  let b2bError: string | null = null;
+  try {
+    const companiesResponse = await admin.graphql(
+      `#graphql
+      query VendoraQuoteCompanies {
+        companies(first: 50) {
+          nodes {
+            name
+            mainContact { id }
+            locations(first: 20) { nodes { id name } }
           }
         }
       }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-          metafields: [
-            {
-              namespace: "$app",
-              key: "demo_info",
-              value: "Created by React Router Template",
-            },
-          ],
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
-
-  const metaobjectResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpsertMetaobject($handle: MetaobjectHandleInput!, $values: JSON!) {
-      metaobjectUpsert(handle: $handle, values: $values) {
-        metaobject {
-          id
-          handle
-          values
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        handle: {
-          type: "$app:example",
-          handle: "demo-entry",
-        },
-        values: {
-          title: "Demo Entry",
-          description:
-            "This metaobject was created by the Shopify app template to demonstrate the metaobject API.",
-        },
-      },
-    },
-  );
-
-  const metaobjectResponseJson = await metaobjectResponse.json();
+    );
+    const { data } = await companiesResponse.json();
+    companies = data?.companies.nodes ?? [];
+  } catch (error) {
+    if (error instanceof Response) throw error; // let re-auth redirects through
+    b2bError = error instanceof Error ? error.message : String(error);
+  }
 
   return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-    metaobject: metaobjectResponseJson!.data!.metaobjectUpsert!.metaobject,
+    plan: shopData?.shop.plan ?? null,
+    variants: shopData?.productVariants.nodes ?? [],
+    companies,
+    b2bError,
+    quotes: await db.quote.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+    }),
   };
 };
 
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin, session } = await authenticate.admin(request);
+  const form = await request.formData();
 
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
+  try {
+    if (form.get("intent") === "create") {
+      await createQuote(admin, session.shop, {
+        locationId: form.get("locationId"),
+        variantId: form.get("variantId"),
+        quantity: form.get("quantity"),
+      });
+    } else {
+      await convertQuote(admin, session.shop, String(form.get("quoteId")));
     }
-  }, [fetcher.data?.product?.id, shopify]);
+    return { error: null };
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+};
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+export default function Index() {
+  const { plan, variants, companies, b2bError, quotes } =
+    useLoaderData<typeof loader>();
+  const createFetcher = useFetcher<typeof action>();
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
-
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references. Includes a product{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metafields"
-            target="_blank"
-          >
-            metafield
-          </s-link>{" "}
-          and{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metaobjects"
-            target="_blank"
-          >
-            metaobject
-          </s-link>
-          .
-        </s-paragraph>
+    <s-page heading="Quotes (B2B draft-order PoC)">
+      <s-section heading="Store eligibility">
         <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
+          <s-badge tone={plan?.shopifyPlus ? "success" : "warning"}>
+            Plus: {plan?.shopifyPlus ? "yes" : "no"}
+          </s-badge>
+          <s-badge>
+            Dev store: {plan?.partnerDevelopment ? "yes" : "no"}
+          </s-badge>
         </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>metaobjectUpsert mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>
-                    {JSON.stringify(fetcher.data.metaobject, null, 2)}
-                  </code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
+        {b2bError && (
+          <s-banner tone="critical" heading="B2B isn't available on this store">
+            Needs a Plus plan or a Plus dev store, plus protected customer data
+            access. Shopify said: {b2bError}
+          </s-banner>
         )}
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Custom data: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data"
-            target="_blank"
-          >
-            Metafields &amp; metaobjects
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
+      <s-section heading="New quote">
+        <createFetcher.Form method="post">
+          <input type="hidden" name="intent" value="create" />
+          <s-stack direction="block" gap="base">
+            <s-select label="Company location" name="locationId">
+              {companies.flatMap((company) =>
+                company.locations.nodes.map((location) => (
+                  <s-option key={location.id} value={location.id}>
+                    {company.name} — {location.name}
+                    {company.mainContact ? "" : " (no main contact)"}
+                  </s-option>
+                )),
+              )}
+            </s-select>
+            <s-select label="Variant" name="variantId">
+              {variants.map((variant) => (
+                <s-option key={variant.id} value={variant.id}>
+                  {variant.product.title} — {variant.title}
+                </s-option>
+              ))}
+            </s-select>
+            <s-number-field
+              label="Quantity"
+              name="quantity"
+              value="1"
+              min={1}
+              max={10000}
+              step={1}
+            ></s-number-field>
+            <s-button
+              type="submit"
+              variant="primary"
+              {...(createFetcher.state !== "idle" ? { loading: true } : {})}
+            >
+              Create quote
+            </s-button>
+            {createFetcher.data?.error && (
+              <s-banner tone="critical">{createFetcher.data.error}</s-banner>
+            )}
+          </s-stack>
+        </createFetcher.Form>
       </s-section>
 
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
+      <s-section heading="Quotes">
+        {quotes.length === 0 ? (
+          <s-paragraph>No quotes yet.</s-paragraph>
+        ) : (
+          <s-stack direction="block" gap="base">
+            {quotes.map((quote) => (
+              <QuoteRow key={quote.id} quote={quote} />
+            ))}
+          </s-stack>
+        )}
       </s-section>
     </s-page>
+  );
+}
+
+function QuoteRow({
+  quote,
+}: {
+  quote: {
+    id: string;
+    status: string;
+    draftOrderId: string | null;
+    lastError: string | null;
+  };
+}) {
+  const fetcher = useFetcher<typeof action>();
+  const error = fetcher.data?.error ?? quote.lastError;
+
+  return (
+    <s-box padding="base" border="base" borderRadius="base">
+      <s-stack direction="block" gap="small-200">
+        <s-stack direction="inline" gap="base" alignItems="center">
+          <s-text type="strong">vendora-quote-{quote.id}</s-text>
+          <s-badge tone={quote.status === "CONVERTED" ? "success" : "auto"}>
+            {quote.status}
+          </s-badge>
+          {quote.draftOrderId ? (
+            <s-link
+              href={`shopify://admin/draft_orders/${quote.draftOrderId.split("/").pop()}`}
+              target="_top"
+            >
+              Open draft order
+            </s-link>
+          ) : (
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="convert" />
+              <input type="hidden" name="quoteId" value={quote.id} />
+              <s-button
+                type="submit"
+                {...(fetcher.state !== "idle" ? { loading: true } : {})}
+              >
+                Convert to draft order
+              </s-button>
+            </fetcher.Form>
+          )}
+        </s-stack>
+        {error && <s-text tone="critical">{error}</s-text>}
+      </s-stack>
+    </s-box>
   );
 }
 
