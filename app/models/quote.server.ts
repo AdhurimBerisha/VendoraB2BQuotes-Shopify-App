@@ -33,7 +33,7 @@ export async function createQuote(
   // Derive company + contact from Shopify instead of trusting the client.
   const response = await admin.graphql(
     `#graphql
-    query QuoteCompanyLocation($id: ID!) {
+    query VendoraQuoteCompanyLocation($id: ID!) {
       companyLocation(id: $id) {
         id
         company { id mainContact { id } }
@@ -115,7 +115,7 @@ class DraftOrderUserErrors extends Error {}
 async function findDraftOrderId(admin: AdminApiContext, quoteId: string) {
   const response = await admin.graphql(
     `#graphql
-    query QuoteDraftOrderByTag($query: String!) {
+    query VendoraQuoteDraftOrderByTag($query: String!) {
       draftOrders(first: 1, query: $query) {
         nodes { id }
       }
@@ -123,13 +123,13 @@ async function findDraftOrderId(admin: AdminApiContext, quoteId: string) {
     { variables: { query: `tag:'${quoteTag(quoteId)}'` } },
   );
   const { data } = await response.json();
-  return (data?.draftOrders?.nodes?.[0]?.id as string | undefined) ?? null;
+  return data?.draftOrders.nodes[0]?.id ?? null;
 }
 
 async function createDraftOrder(admin: AdminApiContext, quote: Quote) {
   const response = await admin.graphql(
     `#graphql
-    mutation QuoteDraftOrderCreate($input: DraftOrderInput!) {
+    mutation VendoraQuoteDraftOrderCreate($input: DraftOrderInput!) {
       draftOrderCreate(input: $input) {
         draftOrder { id }
         userErrors { field message }
@@ -155,9 +155,9 @@ async function createDraftOrder(admin: AdminApiContext, quote: Quote) {
   const result = data?.draftOrderCreate;
   if (result?.userErrors?.length) {
     throw new DraftOrderUserErrors(
-      result.userErrors.map((e: { message: string }) => e.message).join("; "),
+      result.userErrors.map((e) => e.message).join("; "),
     );
   }
   if (!result?.draftOrder) throw new Error("draftOrderCreate returned no draft order");
-  return result.draftOrder.id as string;
+  return result.draftOrder.id;
 }

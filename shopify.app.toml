@@ -10,7 +10,7 @@ name = "vendora"
 scopes = "read_products,read_customers,write_draft_orders"
 
 [webhooks]
-api_version = "2026-07"
+api_version = "2026-10"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/uninstalled"

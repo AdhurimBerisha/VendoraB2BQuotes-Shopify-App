@@ -16,6 +16,8 @@
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
+    "codegen": "graphql-codegen",
+    "codegen:check": "graphql-codegen && git diff --exit-code app/types",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
     "test": "vitest run",

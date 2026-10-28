@@ -8,20 +8,16 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { convertQuote, createQuote } from "../models/quote.server";
+import type { VendoraQuoteCompaniesQuery } from "../types/admin.generated";
 
-type Company = {
-  name: string;
-  mainContact: { id: string } | null;
-  locations: { nodes: { id: string; name: string }[] };
-};
-type Variant = { id: string; title: string; product: { title: string } };
+type Company = VendoraQuoteCompaniesQuery["companies"]["nodes"][number];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
 
   const shopResponse = await admin.graphql(
     `#graphql
-    query QuoteShopAndVariants {
+    query VendoraQuoteShopAndVariants {
       shop { plan { shopifyPlus partnerDevelopment } }
       productVariants(first: 50) {
         nodes { id title product { title } }
@@ -35,7 +31,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     const companiesResponse = await admin.graphql(
       `#graphql
-      query QuoteCompanies {
+      query VendoraQuoteCompanies {
         companies(first: 50) {
           nodes {
             name
@@ -46,18 +42,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }`,
     );
     const { data } = await companiesResponse.json();
-    companies = data?.companies?.nodes ?? [];
+    companies = data?.companies.nodes ?? [];
   } catch (error) {
     if (error instanceof Response) throw error; // let re-auth redirects through
     b2bError = error instanceof Error ? error.message : String(error);
   }
 
   return {
-    plan: shopData?.shop?.plan as {
-      shopifyPlus: boolean;
-      partnerDevelopment: boolean;
-    },
-    variants: (shopData?.productVariants?.nodes ?? []) as Variant[],
+    plan: shopData?.shop.plan ?? null,
+    variants: shopData?.productVariants.nodes ?? [],
     companies,
     b2bError,
     quotes: await db.quote.findMany({
