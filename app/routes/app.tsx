@@ -3,18 +3,22 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
-import { authenticate } from "../shopify.server";
+import { getActor } from "../models/actor.server";
 import { getShop, upsertShopOnInstall } from "../models/shop.server";
 
+// Child loaders run in parallel with this one, so only this loader records the staff member.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const actor = await getActor(request);
 
   // Backfill for shops installed before afterAuth existed, or if afterAuth failed.
-  const shop = await getShop(session.shop);
-  if (!shop || shop.uninstalledAt) await upsertShopOnInstall(admin, session.shop);
+  const shop = await getShop(actor.shop);
+  if (!shop || shop.uninstalledAt) await upsertShopOnInstall(actor.admin, actor.shop);
 
-  // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return {
+    // eslint-disable-next-line no-undef
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    staff: { name: actor.name, role: actor.role, locale: actor.locale },
+  };
 };
 
 export default function App() {

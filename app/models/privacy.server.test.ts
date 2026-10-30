@@ -28,6 +28,7 @@ const seedShop = async (shop: string) => {
   await db.webhookEvent.create({ data: { id: randomUUID(), shop, topic: "APP_UNINSTALLED" } });
   await db.privacyRequest.create({ data: { shop, topic: "customers/data_request" } });
   await db.auditEvent.create({ data: { shop, actorType: "SYSTEM", action: "quote.created" } });
+  await db.staffMember.create({ data: { shop, shopifyUserId: 1n, displayName: "Ana" } });
 };
 
 const countFor = async (shop: string) => ({
@@ -37,6 +38,7 @@ const countFor = async (shop: string) => ({
   webhookEvent: await db.webhookEvent.count({ where: { shop } }),
   privacyRequest: await db.privacyRequest.count({ where: { shop } }),
   auditEvent: await db.auditEvent.count({ where: { shop } }),
+  staffMember: await db.staffMember.count({ where: { shop } }),
 });
 
 test("shop/redact deletes everything for that shop only", async () => {
@@ -46,10 +48,10 @@ test("shop/redact deletes everything for that shop only", async () => {
   await redactShop(SHOP_A);
 
   expect(await countFor(SHOP_A)).toEqual({
-    shop: 0, session: 0, quote: 0, webhookEvent: 0, privacyRequest: 0, auditEvent: 0,
+    shop: 0, session: 0, quote: 0, webhookEvent: 0, privacyRequest: 0, auditEvent: 0, staffMember: 0,
   });
   expect(await countFor(SHOP_B)).toEqual({
-    shop: 1, session: 1, quote: 1, webhookEvent: 1, privacyRequest: 1, auditEvent: 1,
+    shop: 1, session: 1, quote: 1, webhookEvent: 1, privacyRequest: 1, auditEvent: 1, staffMember: 1,
   });
 });
 
@@ -59,7 +61,7 @@ test("every shop-scoped model is covered by redactShop", () => {
     .filter((model) => model.fields.some((field) => field.name === "shop"))
     .map((model) => model.name)
     .sort();
-  expect(shopScoped).toEqual(["AuditEvent", "PrivacyRequest", "Quote", "Session", "WebhookEvent"]);
+  expect(shopScoped).toEqual(["AuditEvent", "PrivacyRequest", "Quote", "Session", "StaffMember", "WebhookEvent"]);
 });
 
 test("customers/redact anonymises only that customer's quotes", async () => {

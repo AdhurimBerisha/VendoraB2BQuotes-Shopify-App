@@ -141,6 +141,21 @@ model Shop {
   updatedAt         DateTime  @updatedAt
 }
 
+// One row per Shopify staff member who has opened the app (from their online session).
+model StaffMember {
+  id            String   @id @default(cuid())
+  shop          String
+  shopifyUserId BigInt
+  displayName   String
+  email         String? // only when Shopify says it's verified
+  role          String   @default("REP") // Role in app/models/actor.ts; set on first visit, then only via Settings → Team (M2.4)
+  locale        String   @default("en")
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([shop, shopifyUserId])
+}
+
 model WebhookEvent {
   id          String    @id // X-Shopify-Webhook-Id (unique per delivery)
   eventId     String? // X-Shopify-Event-Id (same merchant action)

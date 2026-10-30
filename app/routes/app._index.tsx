@@ -5,31 +5,20 @@ import type {
 } from "react-router";
 import { useEffect } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { boundary, type AdminApiContext } from "@shopify/shopify-app-react-router/server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
 import { runAction, type ActionResult } from "../lib/action.server";
 import { UserError } from "../lib/errors";
 import { D, formatMoney } from "../lib/money";
 import { gid, parseForm, quantity } from "../lib/validation";
-import type { StaffActor } from "../models/actor";
+import { getActor } from "../models/actor.server";
 import { createQuote, listQuotes, quoteLabel } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { requestSync } from "../models/sync.server";
 import { saveDraftLines } from "../models/version.server";
 import { searchCompanies } from "../shopify/companies.server";
 import { getVariant } from "../shopify/products.server";
-
-// ponytail: placeholder staff actor; M2.2 builds the real one from the online session.
-const staffActor = (shop: string, admin: AdminApiContext): StaffActor => ({
-  type: "STAFF",
-  shop,
-  userId: null,
-  name: "Staff",
-  role: "OWNER",
-  locale: "en",
-  admin,
-});
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -83,9 +72,9 @@ const createSchema = z.object({
 const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min(1) });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const actor = await getActor(request);
+  const { admin } = actor;
   const form = await request.formData();
-  const actor = staffActor(session.shop, admin);
 
   return runAction(async () => {
     if (form.get("intent") === "sync") {

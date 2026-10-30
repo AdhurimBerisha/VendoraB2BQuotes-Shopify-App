@@ -11,6 +11,7 @@ const redactShop = async (shop: string) => {
     db.quote.deleteMany({ where: { shop } }), // versions and lines cascade
     db.session.deleteMany({ where: { shop } }),
     db.shop.deleteMany({ where: { id: shop } }),
+    db.staffMember.deleteMany({ where: { shop } }),
     db.webhookEvent.deleteMany({ where: { shop } }),
   ]);
 };
