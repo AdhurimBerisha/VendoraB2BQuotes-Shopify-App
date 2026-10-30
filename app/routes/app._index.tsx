@@ -9,7 +9,6 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
 import { runAction, type ActionResult } from "../lib/action.server";
-import { UserError } from "../lib/errors";
 import { D, formatMoney } from "../lib/money";
 import { gid, parseForm, quantity } from "../lib/validation";
 import { getActor } from "../models/actor.server";
@@ -18,7 +17,6 @@ import { getShop } from "../models/shop.server";
 import { requestSync } from "../models/sync.server";
 import { saveDraftLines } from "../models/version.server";
 import { searchCompanies } from "../shopify/companies.server";
-import { getVariant } from "../shopify/products.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -73,7 +71,6 @@ const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const actor = await getActor(request);
-  const { admin } = actor;
   const form = await request.formData();
 
   return runAction(async () => {
@@ -82,24 +79,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return null;
     }
     const input = parseForm(form, createSchema);
-    const variant = await getVariant(admin, input.variantId);
-    if (!variant) throw new UserError("quote.errors.variantNotFound");
     const quote = await createQuote(actor, { locationId: input.locationId });
     // A new quote's lockVersion is 0. The line editor itself arrives with the admin UI (M2.8).
     await saveDraftLines(
       actor,
       quote.id,
       0,
-      [
-        {
-          variantId: variant.id,
-          productId: variant.product.id,
-          sku: variant.sku ?? null,
-          title: variant.product.title,
-          quantity: input.quantity,
-          catalogPrice: D(variant.price),
-        },
-      ],
+      [{ variantId: input.variantId, quantity: input.quantity }],
       null,
     );
     return null;

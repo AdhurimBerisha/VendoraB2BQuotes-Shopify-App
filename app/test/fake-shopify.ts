@@ -12,9 +12,47 @@ const FAKE_LOCATION = {
   },
 };
 
+type FakeVariant = {
+  price: string;
+  currencyCode?: string;
+  status?: string;
+  quantityRule?: { minimum: number; maximum: number | null; increment: number };
+  priceBreaks?: { minimumQuantity: number; price: string }[];
+  inventoryQuantity?: number | null;
+};
+
+// The VendoraVariantPrices node for a variant at the company location.
+const variantNode = (id: string, variant: FakeVariant) => {
+  const n = id.split("/").pop();
+  const currencyCode = variant.currencyCode ?? "USD";
+  return {
+    id,
+    sku: `SKU-${n}`,
+    title: "Default Title",
+    inventoryQuantity: variant.inventoryQuantity ?? null,
+    inventoryItem: { tracked: variant.inventoryQuantity != null },
+    product: { id: `gid://shopify/Product/${n}`, title: `Product ${n}`, status: variant.status ?? "ACTIVE", isGiftCard: false },
+    contextualPricing: {
+      price: { amount: variant.price, currencyCode },
+      quantityRule: variant.quantityRule ?? { minimum: 1, maximum: null, increment: 1 },
+      quantityPriceBreaks: {
+        nodes: (variant.priceBreaks ?? []).map((b) => ({
+          minimumQuantity: b.minimumQuantity,
+          price: { amount: b.price, currencyCode },
+        })),
+      },
+    },
+  };
+};
+
 // Fake Shopify Admin client: counts draftOrderCreate calls and keeps its own draft
 // orders so tag search behaves like the real API. Grows into the fault-injection fake in M4.1.
-const fakeShopify = ({ crashAfterCreate = false, location = FAKE_LOCATION as object } = {}) => {
+// `variants` (keyed by gid) answers price lookups; a gid not listed behaves like a deleted variant.
+const fakeShopify = ({
+  crashAfterCreate = false,
+  location = FAKE_LOCATION as object,
+  variants = {} as Record<string, FakeVariant>,
+} = {}) => {
   const drafts: { id: string; tags: string[] }[] = [];
   let creates = 0;
   const graphql = async (
@@ -38,6 +76,12 @@ const fakeShopify = ({ crashAfterCreate = false, location = FAKE_LOCATION as obj
         data: { draftOrders: { nodes: nodes.map(({ id }) => ({ id })) } },
       });
     }
+    if (query.includes("VendoraVariantPrices")) {
+      const nodes = (variables.ids as string[]).map((id) =>
+        variants[id] ? variantNode(id, variants[id]) : null,
+      );
+      return Response.json({ data: { nodes } });
+    }
     if (query.includes("companyLocation(")) {
       return Response.json({ data: { companyLocation: location } });
     }
@@ -51,3 +95,4 @@ const fakeShopify = ({ crashAfterCreate = false, location = FAKE_LOCATION as obj
 };
 
 export { fakeShopify };
+export type { FakeVariant };
