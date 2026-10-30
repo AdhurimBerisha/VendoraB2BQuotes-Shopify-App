@@ -17,6 +17,9 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+  // One online token per staff member, so we know who is acting (audit, roles).
+  // The shop's offline token is still stored and used by background jobs (unauthenticated.admin).
+  useOnlineTokens: true,
   future: {
     expiringOfflineAccessTokens: true,
   },

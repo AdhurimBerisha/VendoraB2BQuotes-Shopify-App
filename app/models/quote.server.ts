@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { getCompanyLocation } from "../shopify/companies.server";
 import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
+import { requirePermission } from "./permissions";
 
 type QuoteStatus =
   | "DRAFT"
@@ -47,6 +48,7 @@ const transition = async (
 
 // Company, contact and currency come from Shopify, never from the client.
 const createQuote = async (actor: StaffActor, input: { locationId: string }) => {
+  requirePermission(actor, "quote.create");
   const location = await getCompanyLocation(actor.admin, input.locationId);
   if (!location) throw new UserError("quote.errors.locationNotFound");
   const contact = location.company.mainContact;

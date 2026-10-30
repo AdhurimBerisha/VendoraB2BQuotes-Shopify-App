@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import db from "../db.server";
-import { ConflictError, NotFoundError } from "../lib/errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors";
 import { D } from "../lib/money";
 import { fakeShopify } from "../test/fake-shopify";
 import { staff, testQuote, testShop } from "../test/factories";
@@ -9,7 +9,12 @@ import { createQuote, getQuote, transition } from "./quote.server";
 import { saveDraftLines } from "./version.server";
 
 let SHOP: string;
-const shopify = fakeShopify();
+const shopify = fakeShopify({
+  variants: {
+    "gid://shopify/ProductVariant/1": { price: "10.00" },
+    "gid://shopify/ProductVariant/2": { price: "25.50" },
+  },
+});
 const actor = () => staff(SHOP, shopify.admin);
 
 beforeAll(async () => {
@@ -21,13 +26,10 @@ afterAll(async () => {
   await db.$disconnect();
 });
 
-const line = (n: number, quantity: number, price: string) => ({
+// Catalog prices come from the fake: variant 1 = 10.00, variant 2 = 25.50.
+const line = (n: number, quantity: number) => ({
   variantId: `gid://shopify/ProductVariant/${n}`,
-  productId: `gid://shopify/Product/${n}`,
-  sku: null,
-  title: `Product ${n}`,
   quantity,
-  catalogPrice: D(price),
 });
 
 test("20 quotes created at once get numbers 1001…1020, no duplicates", async () => {
@@ -85,10 +87,10 @@ test("another shop can't read the quote", async () => {
 
 test("saving with a stale lockVersion is rejected", async () => {
   const quote = await testQuote(SHOP);
-  await saveDraftLines(actor(), quote.id, 0, [line(1, 1, "10")], null);
+  await saveDraftLines(actor(), quote.id, 0, [line(1, 1)], null);
 
   await expect(
-    saveDraftLines(actor(), quote.id, 0, [line(1, 2, "10")], null),
+    saveDraftLines(actor(), quote.id, 0, [line(1, 2)], null),
   ).rejects.toMatchObject({ key: "quote.errors.changedByOther" });
 });
 
@@ -100,7 +102,7 @@ test("a locked version can't be edited", async () => {
   });
 
   await expect(
-    saveDraftLines(actor(), quote.id, 0, [line(1, 1, "10")], null),
+    saveDraftLines(actor(), quote.id, 0, [line(1, 1)], null),
   ).rejects.toMatchObject({ key: "quote.errors.versionLocked" });
 });
 
@@ -112,8 +114,8 @@ test("totals: 10 % line discount, price override, 5 % quote discount", async () 
     id,
     0,
     [
-      { ...line(1, 3, "10.00"), discountPct: D(10) }, // 30.00 − 10 % = 27.00
-      { ...line(2, 2, "25.50"), overridePrice: D("24.00") }, // 2 × 24.00 = 48.00
+      { ...line(1, 3), discountPct: D(10) }, // 30.00 − 10 % = 27.00
+      { ...line(2, 2), overridePrice: D("24.00") }, // 2 × 24.00 = 48.00
     ],
     D(5), // 75.00 − 3.75
   );
@@ -129,4 +131,67 @@ test("totals: 10 % line discount, price override, 5 % quote discount", async () 
     (event) => event.action,
   );
   expect(actions).toEqual(expect.arrayContaining(["quote.created", "quote.lines_saved"]));
+});
+
+test("lines are priced from Shopify: price break, title, problems", async () => {
+  const priced = fakeShopify({
+    variants: {
+      "gid://shopify/ProductVariant/3": {
+        price: "50.00",
+        priceBreaks: [
+          { minimumQuantity: 10, price: "45.00" },
+          { minimumQuantity: 20, price: "40.00" },
+        ],
+      },
+      "gid://shopify/ProductVariant/4": {
+        price: "5.00",
+        quantityRule: { minimum: 5, maximum: null, increment: 5 },
+        inventoryQuantity: 2,
+      },
+      "gid://shopify/ProductVariant/5": { price: "7.00", currencyCode: "CAD", status: "DRAFT" },
+    },
+  });
+  const { id } = await createQuote(staff(SHOP, priced.admin), {
+    locationId: "gid://shopify/CompanyLocation/1",
+  });
+
+  await saveDraftLines(
+    staff(SHOP, priced.admin),
+    id,
+    0,
+    [line(3, 20), line(4, 7), line(5, 1)],
+    null,
+  );
+
+  const lines = (await getQuote(SHOP, id)).currentVersion!.lines;
+  expect(
+    lines.map((l) => [l.titleSnapshot, l.catalogPrice.toFixed(2), l.lineTotal.toFixed(2), l.problems]),
+  ).toEqual([
+    ["Product 3", "50.00", "800.00", null], // 20 × 40.00 break
+    ["Product 4", "5.00", "35.00", ["QTY_NOT_INCREMENT", "OUT_OF_STOCK"]],
+    ["Product 5", "7.00", "7.00", ["PRODUCT_NOT_ACTIVE", "CURRENCY_MISMATCH"]],
+  ]);
+});
+
+test("a deleted variant is rejected and nothing is saved", async () => {
+  const quote = await testQuote(SHOP);
+
+  await expect(
+    saveDraftLines(actor(), quote.id, 0, [line(1, 1), line(99, 1)], null),
+  ).rejects.toMatchObject({ key: "quote.errors.variantNotFound" });
+  const reloaded = await getQuote(SHOP, quote.id);
+  expect(reloaded.lockVersion).toBe(0);
+  expect(reloaded.currentVersion!.lines).toHaveLength(1); // testQuote's original line
+});
+
+test("a viewer can't create or edit quotes, even bypassing the page", async () => {
+  const viewer = staff(SHOP, shopify.admin, "VIEWER");
+  const quote = await testQuote(SHOP);
+
+  await expect(
+    createQuote(viewer, { locationId: "gid://shopify/CompanyLocation/1" }),
+  ).rejects.toBeInstanceOf(ForbiddenError);
+  await expect(saveDraftLines(viewer, quote.id, 0, [line(1, 1)], null)).rejects.toBeInstanceOf(
+    ForbiddenError,
+  );
 });

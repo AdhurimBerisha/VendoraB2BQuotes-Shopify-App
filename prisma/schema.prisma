@@ -85,6 +85,7 @@ model QuoteVersion {
   lockedAt         DateTime? // set when submitted/sent; locked versions are never edited
   createdAt        DateTime    @default(now())
   lines            QuoteLine[]
+  approvals        Approval[]
 
   @@unique([quoteId, versionNumber])
 }
@@ -106,6 +107,22 @@ model QuoteLine {
   problems      Json?
 
   @@index([variantId])
+}
+
+// One approval request per submitted version that hit a rule. Decided once, never edited.
+model Approval {
+  id          String       @id @default(cuid())
+  versionId   String
+  version     QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  reasons     Json // [{ code, detail }], ApprovalReason in app/models/approval.ts
+  requestedBy BigInt? // Shopify user id
+  decidedBy   BigInt?
+  decision    String? // APPROVED | REJECTED, null while pending
+  comment     String?
+  createdAt   DateTime     @default(now())
+  decidedAt   DateTime?
+
+  @@index([versionId])
 }
 
 // Append-only history of every change to a quote.
@@ -139,6 +156,21 @@ model Shop {
   quoteTerms        String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+// One row per Shopify staff member who has opened the app (from their online session).
+model StaffMember {
+  id            String   @id @default(cuid())
+  shop          String
+  shopifyUserId BigInt
+  displayName   String
+  email         String? // only when Shopify says it's verified
+  role          String   @default("REP") // Role in app/models/actor.ts; set on first visit, then only via Settings → Team (M2.4)
+  locale        String   @default("en")
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([shop, shopifyUserId])
 }
 
 model WebhookEvent {
