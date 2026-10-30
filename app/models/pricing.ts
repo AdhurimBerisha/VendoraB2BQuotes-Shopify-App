@@ -30,6 +30,10 @@ const lineTotal = (line: PricedLine, currency: string): Money => {
   return roundMoney(gross.minus(discount), currency);
 };
 
+// discountTotal / listTotal × 100, 4 decimals; 0 for an empty quote.
+const discountPctOf = (listTotal: Money, discountTotal: Money): Money =>
+  listTotal.isZero() ? ZERO : discountTotal.div(listTotal).mul(100).toDecimalPlaces(4);
+
 type Totals = {
   listTotal: Money; // catalog price × quantity: the cost without any deal
   subtotal: Money; // after line prices and line discounts
@@ -51,9 +55,7 @@ const totals = (
     : ZERO;
   const total = subtotal.minus(quoteDiscount);
   const discountTotal = listTotal.minus(total);
-  const effectiveDiscountPct = listTotal.isZero()
-    ? ZERO
-    : discountTotal.div(listTotal).mul(100).toDecimalPlaces(4);
+  const effectiveDiscountPct = discountPctOf(listTotal, discountTotal);
   return { listTotal, subtotal, quoteDiscount, total, discountTotal, effectiveDiscountPct };
 };
 
@@ -90,5 +92,5 @@ const BLOCKING: LineProblem[] = [
   "PRODUCT_DELETED",
 ];
 
-export { BLOCKING, lineTotal, quantityProblems, totals, unitPrice };
+export { BLOCKING, discountPctOf, lineTotal, quantityProblems, totals, unitPrice };
 export type { LineProblem, PriceBreak, PricedLine, QuantityRule, Totals };

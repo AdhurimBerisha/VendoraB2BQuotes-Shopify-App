@@ -5,6 +5,8 @@ const FAKE_LOCATION = {
   id: "gid://shopify/CompanyLocation/1",
   name: "Main",
   currency: "USD",
+  shippingAddress: { countryCode: "US" },
+  billingAddress: { countryCode: "US" },
   company: {
     id: "gid://shopify/Company/1",
     name: "Fake Co",
@@ -77,6 +79,8 @@ const fakeShopify = ({
       });
     }
     if (query.includes("VendoraVariantPrices")) {
+      // Without the country, Shopify ignores the location's market (see getLocationCountry).
+      if (!variables.country) throw new Error("VendoraVariantPrices called without a country");
       const nodes = (variables.ids as string[]).map((id) =>
         variants[id] ? variantNode(id, variants[id]) : null,
       );

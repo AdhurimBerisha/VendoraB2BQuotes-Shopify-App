@@ -12,10 +12,11 @@ import { runAction, type ActionResult } from "../lib/action.server";
 import { D, formatMoney } from "../lib/money";
 import { gid, parseForm, quantity } from "../lib/validation";
 import { getActor } from "../models/actor.server";
+import { decide, submitQuote } from "../models/approval.server";
 import { createQuote, listQuotes, quoteLabel } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { requestSync } from "../models/sync.server";
-import { saveDraftLines } from "../models/version.server";
+import { reviseQuote, saveDraftLines } from "../models/version.server";
 import { searchCompanies } from "../shopify/companies.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -68,14 +69,28 @@ const createSchema = z.object({
   quantity,
 });
 const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min(1) });
+const flowSchema = z.object({
+  intent: z.enum(["submit", "approve", "reject", "revise"]),
+  quoteId: z.string().min(1),
+  comment: z.string().max(2000).optional(),
+});
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const actor = await getActor(request);
   const form = await request.formData();
 
   return runAction(async () => {
-    if (form.get("intent") === "sync") {
+    const intent = form.get("intent");
+    if (intent === "sync") {
       await requestSync(actor, parseForm(form, syncSchema).quoteId);
+      return null;
+    }
+    if (intent !== "create") {
+      const { quoteId, comment } = parseForm(form, flowSchema);
+      if (intent === "submit") await submitQuote(actor, quoteId);
+      if (intent === "approve") await decide(actor, quoteId, "APPROVED", comment);
+      if (intent === "reject") await decide(actor, quoteId, "REJECTED", comment);
+      if (intent === "revise") await reviseQuote(actor, quoteId);
       return null;
     }
     const input = parseForm(form, createSchema);
@@ -250,9 +265,50 @@ function QuoteRow({
             </fetcher.Form>
           )}
         </s-stack>
+        <QuoteFlow quoteId={quote.id} status={quote.status} />
         {error && <s-text tone="critical">{error}</s-text>}
       </s-stack>
     </s-box>
+  );
+}
+
+// ponytail: bare approval buttons so the flow can be tried; the quote page (M2.8) replaces them.
+function QuoteFlow({ quoteId, status }: { quoteId: string; status: string }) {
+  const fetcher = useFetcher<typeof action>();
+  const error = errorText(fetcher.data);
+  const busy = fetcher.state !== "idle" ? { loading: true } : {};
+  const button = (intent: string, label: string) => (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value={intent} />
+      <input type="hidden" name="quoteId" value={quoteId} />
+      <s-button type="submit" {...busy}>
+        {label}
+      </s-button>
+    </fetcher.Form>
+  );
+
+  return (
+    <s-stack direction="block" gap="small-200">
+      {status === "DRAFT" && button("submit", "Submit")}
+      {status === "PENDING_APPROVAL" && (
+        <s-stack direction="block" gap="small-200">
+          {button("approve", "Approve")}
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="reject" />
+            <input type="hidden" name="quoteId" value={quoteId} />
+            <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
+              <s-text-field label="Reason for rejecting" name="comment"></s-text-field>
+              <s-button type="submit" tone="critical" {...busy}>
+                Reject
+              </s-button>
+            </s-grid>
+          </fetcher.Form>
+        </s-stack>
+      )}
+      {["APPROVED", "SENT", "DECLINED", "EXPIRED"].includes(status) &&
+        button("revise", "Revise (new version)")}
+      {error && <s-text tone="critical">{error}</s-text>}
+    </s-stack>
   );
 }
 

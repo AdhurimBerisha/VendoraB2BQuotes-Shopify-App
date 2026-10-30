@@ -12,13 +12,34 @@ type VariantPrice = {
   isGiftCard: boolean;
   tracked: boolean;
   inventoryQuantity: number | null;
-  price: string; // the company location's catalog price (Shopify falls back to the base price itself)
+  price: string; // the price at the company location: its catalog, else the base price converted to its market
   currencyCode: string;
   quantityRule: QuantityRule;
   priceBreaks: { minimumQuantity: number; price: string }[];
 };
 
 const BATCH = 100;
+
+// The location's market comes from its address country. Without it, contextualPricing for a
+// location with no catalog returns the shop-currency base price instead of the market price
+// the draft order charges (e.g. 749.95 USD instead of 1010.00 CAD for Snowdevil).
+const getLocationCountry = async (admin: AdminApiContext, companyLocationId: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraLocationCountry($id: ID!) {
+        companyLocation(id: $id) {
+          shippingAddress { countryCode }
+          billingAddress { countryCode }
+        }
+      }`,
+      { variables: { id: companyLocationId } },
+    ),
+  );
+  const { data } = await response.json();
+  const location = data?.companyLocation;
+  return location?.shippingAddress?.countryCode ?? location?.billingAddress?.countryCode ?? null;
+};
 
 // Prices as Shopify will charge them at this company location. Deleted variants are missing from the map.
 const getVariantPrices = async (
@@ -27,12 +48,15 @@ const getVariantPrices = async (
   companyLocationId: string,
 ): Promise<Map<string, VariantPrice>> => {
   const prices = new Map<string, VariantPrice>();
+  if (variantIds.length === 0) return prices;
+  const country = await getLocationCountry(admin, companyLocationId);
+  if (!country) console.warn("company location has no address country", { companyLocationId });
   for (let i = 0; i < variantIds.length; i += BATCH) {
     const ids = variantIds.slice(i, i + BATCH);
     const response = await call(() =>
       admin.graphql(
         `#graphql
-        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!) {
+        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!, $country: CountryCode) {
           nodes(ids: $ids) {
             ... on ProductVariant {
               id
@@ -41,7 +65,7 @@ const getVariantPrices = async (
               inventoryQuantity
               inventoryItem { tracked }
               product { id title status isGiftCard }
-              contextualPricing(context: { companyLocationId: $companyLocationId }) {
+              contextualPricing(context: { companyLocationId: $companyLocationId, country: $country }) {
                 price { amount currencyCode }
                 quantityRule { minimum maximum increment }
                 quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }
@@ -49,7 +73,7 @@ const getVariantPrices = async (
             }
           }
         }`,
-        { variables: { ids, companyLocationId } },
+        { variables: { ids, companyLocationId, country } },
       ),
     );
     const { data } = await response.json();

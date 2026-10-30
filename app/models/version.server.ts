@@ -6,6 +6,7 @@ import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { type LineProblem, type PricedLine, lineTotal, quantityProblems, totals } from "./pricing";
+import { transition } from "./quote.server";
 
 // What staff choose per line; catalog prices come from Shopify for the quote's company location.
 type DraftLineInput = {
@@ -125,5 +126,100 @@ const saveDraftLines = async (
   });
 };
 
-export { saveDraftLines };
+// Before submit (and send, M2.6): re-check the current draft against Shopify. If catalog prices
+// moved, the lines are re-saved and the user must review them (quote.errors.pricesChanged).
+// If only line problems changed (product archived, stock), the lines are re-saved silently.
+const refreshPrices = async (actor: StaffActor, quoteId: string) => {
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, shop: actor.shop },
+    include: { currentVersion: { include: { lines: { orderBy: { position: "asc" } } } } },
+  });
+  if (!quote?.currentVersion) throw new NotFoundError();
+  const version = quote.currentVersion;
+  if (version.lines.length === 0) return;
+
+  const variantIds = [...new Set(version.lines.map((line) => line.variantId))];
+  const prices = await getVariantPrices(actor.admin, variantIds, quote.companyLocationId);
+  let pricesChanged = false;
+  let problemsChanged = false;
+  for (const line of version.lines) {
+    const price = prices.get(line.variantId);
+    if (!price || !D(price.price).eq(line.catalogPrice)) pricesChanged = true;
+    else if (
+      JSON.stringify(line.problems ?? []) !==
+      JSON.stringify(lineProblems(price, line.quantity, quote.currencyCode))
+    ) {
+      problemsChanged = true;
+    }
+  }
+  if (!pricesChanged && !problemsChanged) return;
+
+  console.log("draft refreshed before submit", { quoteId, pricesChanged, problemsChanged });
+  await saveDraftLines(
+    actor,
+    quoteId,
+    quote.lockVersion,
+    version.lines.map((line) => ({
+      variantId: line.variantId,
+      quantity: line.quantity,
+      overridePrice: line.overridePrice,
+      discountPct: line.discountPct,
+    })),
+    version.quoteDiscountPct,
+  );
+  if (pricesChanged) throw new UserError("quote.errors.pricesChanged");
+};
+
+// APPROVED / SENT / DECLINED / EXPIRED → a new DRAFT version with a copy of the lines.
+// The old version and its approval stay locked forever (scenario 2).
+const reviseQuote = async (actor: StaffActor, quoteId: string) => {
+  requirePermission(actor, "quote.edit");
+  return db.$transaction(async (tx) => {
+    const quote = await tx.quote.findFirst({
+      where: { id: quoteId, shop: actor.shop },
+      include: { currentVersion: { include: { lines: { orderBy: { position: "asc" } } } } },
+    });
+    const old = quote?.currentVersion;
+    if (!quote || !old) throw new NotFoundError();
+    await transition(tx, actor.shop, quoteId, "revise", "DRAFT");
+
+    const next = await tx.quoteVersion.create({
+      data: {
+        quoteId,
+        versionNumber: old.versionNumber + 1,
+        createdByUserId: actor.userId,
+        quoteDiscountPct: old.quoteDiscountPct,
+        listTotal: old.listTotal,
+        subtotal: old.subtotal,
+        discountTotal: old.discountTotal,
+        total: old.total,
+        note: old.note,
+        internalNote: old.internalNote,
+        lines: {
+          create: old.lines.map((line) => ({
+            position: line.position,
+            variantId: line.variantId,
+            productId: line.productId,
+            sku: line.sku,
+            titleSnapshot: line.titleSnapshot,
+            quantity: line.quantity,
+            catalogPrice: line.catalogPrice,
+            overridePrice: line.overridePrice,
+            discountPct: line.discountPct,
+            lineTotal: line.lineTotal,
+            problems: line.problems ?? undefined,
+          })),
+        },
+      },
+    });
+    await tx.quote.update({
+      where: { id: quoteId },
+      data: { currentVersionId: next.id, lockVersion: { increment: 1 } },
+    });
+    await audit(tx, actor, quoteId, "quote.revised", { from: old.versionNumber, to: next.versionNumber });
+    return next;
+  });
+};
+
+export { refreshPrices, reviseQuote, saveDraftLines };
 export type { DraftLineInput };

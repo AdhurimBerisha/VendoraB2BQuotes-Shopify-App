@@ -55,9 +55,17 @@ export type VendoraCompanySearchQuery = { companies: { nodes: Array<(
       & { mainContact?: AdminTypes.Maybe<Pick<AdminTypes.CompanyContact, 'id'>>, locations: { nodes: Array<Pick<AdminTypes.CompanyLocation, 'id' | 'name' | 'currency'>> } }
     )>, pageInfo: Pick<AdminTypes.PageInfo, 'hasNextPage' | 'endCursor'> } };
 
+export type VendoraLocationCountryQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraLocationCountryQuery = { companyLocation?: AdminTypes.Maybe<{ shippingAddress?: AdminTypes.Maybe<Pick<AdminTypes.CompanyAddress, 'countryCode'>>, billingAddress?: AdminTypes.Maybe<Pick<AdminTypes.CompanyAddress, 'countryCode'>> }> };
+
 export type VendoraVariantPricesQueryVariables = AdminTypes.Exact<{
   ids: Array<AdminTypes.Scalars['ID']['input']> | AdminTypes.Scalars['ID']['input'];
   companyLocationId: AdminTypes.Scalars['ID']['input'];
+  country?: AdminTypes.InputMaybe<AdminTypes.CountryCode>;
 }>;
 
 
@@ -79,7 +87,8 @@ interface GeneratedQueryTypes {
   "#graphql\n    query VendoraQuoteShopAndVariants {\n      shop { plan { shopifyPlus partnerDevelopment } }\n      productVariants(first: 50) {\n        nodes { id title product { title } }\n      }\n    }": {return: VendoraQuoteShopAndVariantsQuery, variables: VendoraQuoteShopAndVariantsQueryVariables},
   "#graphql\n      query VendoraCompanyLocation($id: ID!) {\n        companyLocation(id: $id) {\n          id name currency\n          company { id name mainContact { id customer { id } } }\n        }\n      }": {return: VendoraCompanyLocationQuery, variables: VendoraCompanyLocationQueryVariables},
   "#graphql\n      query VendoraCompanySearch($query: String, $after: String) {\n        companies(first: 20, after: $after, query: $query, sortKey: NAME) {\n          nodes { id name mainContact { id } locations(first: 50) { nodes { id name currency } } }\n          pageInfo { hasNextPage endCursor }\n        }\n      }": {return: VendoraCompanySearchQuery, variables: VendoraCompanySearchQueryVariables},
-  "#graphql\n        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!) {\n          nodes(ids: $ids) {\n            ... on ProductVariant {\n              id\n              sku\n              title\n              inventoryQuantity\n              inventoryItem { tracked }\n              product { id title status isGiftCard }\n              contextualPricing(context: { companyLocationId: $companyLocationId }) {\n                price { amount currencyCode }\n                quantityRule { minimum maximum increment }\n                quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }\n              }\n            }\n          }\n        }": {return: VendoraVariantPricesQuery, variables: VendoraVariantPricesQueryVariables},
+  "#graphql\n      query VendoraLocationCountry($id: ID!) {\n        companyLocation(id: $id) {\n          shippingAddress { countryCode }\n          billingAddress { countryCode }\n        }\n      }": {return: VendoraLocationCountryQuery, variables: VendoraLocationCountryQueryVariables},
+  "#graphql\n        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!, $country: CountryCode) {\n          nodes(ids: $ids) {\n            ... on ProductVariant {\n              id\n              sku\n              title\n              inventoryQuantity\n              inventoryItem { tracked }\n              product { id title status isGiftCard }\n              contextualPricing(context: { companyLocationId: $companyLocationId, country: $country }) {\n                price { amount currencyCode }\n                quantityRule { minimum maximum increment }\n                quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }\n              }\n            }\n          }\n        }": {return: VendoraVariantPricesQuery, variables: VendoraVariantPricesQueryVariables},
   "#graphql\n    query VendoraShopInfo {\n      shop { id ianaTimezone currencyCode }\n    }": {return: VendoraShopInfoQuery, variables: VendoraShopInfoQueryVariables},
 }
 
