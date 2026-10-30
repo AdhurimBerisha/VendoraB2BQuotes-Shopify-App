@@ -4,9 +4,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { getActor } from "../models/actor.server";
+import { can } from "../models/permissions";
 import { getShop, upsertShopOnInstall } from "../models/shop.server";
 
-// Child loaders run in parallel with this one, so only this loader records the staff member.
+// Records the staff member on every admin page load. Child loaders that need the role call getActor too
+// (the upsert is safe to run twice at once, see staff.server.test.ts).
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
 
@@ -18,16 +20,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // eslint-disable-next-line no-undef
     apiKey: process.env.SHOPIFY_API_KEY || "",
     staff: { name: actor.name, role: actor.role, locale: actor.locale },
+    canManageSettings: can(actor, "settings.manage"),
   };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, canManageSettings } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Quotes</s-link>
+        {canManageSettings && <s-link href="/app/settings">Settings</s-link>}
       </s-app-nav>
       <Outlet />
     </AppProvider>

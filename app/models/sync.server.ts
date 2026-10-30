@@ -5,6 +5,7 @@ import { ConflictError } from "../lib/errors";
 import { ShopifyUserErrors, call, throwOnUserErrors } from "../shopify/client.server";
 import type { Actor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
+import { requirePermission } from "./permissions";
 
 // ponytail: draftOrderCreate has no @idempotent support, so a crashed attempt is only
 // reclaimed after STALE_MS and found again by tag. Relies on Shopify's draft-order search
@@ -27,6 +28,7 @@ type SyncableQuote = {
 // syncStatus NONE | FAILED → QUEUED, and the job, in one transaction: a QUEUED quote always
 // has a job. M2.6 adds re-syncing a SYNCED quote (draftOrderUpdate).
 const requestSync = async (actor: Actor, quoteId: string) => {
+  requirePermission(actor, "quote.send");
   await getBoss(); // start pg-boss outside the transaction (see enqueue)
   await db.$transaction(async (tx) => {
     const { count } = await tx.quote.updateMany({

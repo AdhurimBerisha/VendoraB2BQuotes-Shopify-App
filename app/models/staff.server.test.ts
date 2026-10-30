@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { Session } from "@shopify/shopify-app-react-router/server";
-import { afterAll, expect, test } from "vitest";
+import { type AdminApiContext, Session } from "@shopify/shopify-app-react-router/server";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import db from "../db.server";
+import { ForbiddenError, NotFoundError } from "../lib/errors";
+import { staff } from "../test/factories";
+import type { Role } from "./actor";
 import { redactShop } from "./privacy.server";
-import { upsertStaffFromSession } from "./staff.server";
+import { setRole, upsertStaffFromSession } from "./staff.server";
 
 const SHOP = `vitest-${randomUUID()}.myshopify.com`;
 
@@ -94,4 +97,77 @@ test("two requests at once on a first visit create one row", async () => {
   await Promise.all([upsertStaffFromSession(session), upsertStaffFromSession(session)]);
   const userId = BigInt(session.onlineAccessInfo!.associated_user.id);
   expect(await db.staffMember.count({ where: { shop: SHOP, shopifyUserId: userId } })).toBe(1);
+});
+
+describe("setRole", () => {
+  const admin = {} as AdminApiContext;
+  const ROLE_SHOP = `vitest-${randomUUID()}.myshopify.com`;
+  let userId = 1n;
+  const member = (role: Role, shop = ROLE_SHOP) =>
+    db.staffMember.create({
+      data: { shop, shopifyUserId: userId++, displayName: `${role} ${userId}`, role },
+    });
+  const actorFor = (target: { shopifyUserId: bigint; role: string }) =>
+    staff(ROLE_SHOP, admin, target.role as Role, target.shopifyUserId);
+
+  beforeAll(async () => {
+    await db.shop.create({ data: { id: ROLE_SHOP } });
+  });
+  afterAll(async () => {
+    await redactShop(ROLE_SHOP);
+  });
+
+  test("an owner promotes a rep, and it's in the history", async () => {
+    const owner = await member("OWNER");
+    const rep = await member("REP");
+
+    await setRole(actorFor(owner), rep.id, "MANAGER");
+
+    expect((await db.staffMember.findUniqueOrThrow({ where: { id: rep.id } })).role).toBe("MANAGER");
+    const event = await db.auditEvent.findFirstOrThrow({
+      where: { shop: ROLE_SHOP, action: "team.role_changed" },
+    });
+    expect(event).toMatchObject({
+      actorId: owner.shopifyUserId.toString(),
+      data: { staffId: rep.id, from: "REP", to: "MANAGER" },
+    });
+  });
+
+  test("the last owner can't be demoted", async () => {
+    const shop = `vitest-${randomUUID()}.myshopify.com`;
+    const owner = await member("OWNER", shop);
+    await expect(
+      setRole(staff(shop, admin, "OWNER", owner.shopifyUserId), owner.id, "MANAGER"),
+    ).rejects.toMatchObject({ key: "team.errors.lastOwner" });
+    await redactShop(shop);
+  });
+
+  test("a manager can't change roles", async () => {
+    const manager = await member("MANAGER");
+    const rep = await member("REP");
+    await expect(setRole(actorFor(manager), rep.id, "MANAGER")).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  test("staff from another shop can't be changed", async () => {
+    const owner = await member("OWNER");
+    const stranger = await member("REP", `vitest-${randomUUID()}.myshopify.com`);
+    await expect(setRole(actorFor(owner), stranger.id, "OWNER")).rejects.toBeInstanceOf(NotFoundError);
+    await redactShop(stranger.shop);
+  });
+
+  test("two owners demoting each other at once leave one owner", async () => {
+    const shop = `vitest-${randomUUID()}.myshopify.com`;
+    await db.shop.create({ data: { id: shop } });
+    const first = await member("OWNER", shop);
+    const second = await member("OWNER", shop);
+
+    const results = await Promise.allSettled([
+      setRole(staff(shop, admin, "OWNER", first.shopifyUserId), second.id, "REP"),
+      setRole(staff(shop, admin, "OWNER", second.shopifyUserId), first.id, "REP"),
+    ]);
+
+    expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(await db.staffMember.count({ where: { shop, role: "OWNER" } })).toBe(1);
+    await redactShop(shop);
+  });
 });

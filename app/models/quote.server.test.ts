@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import db from "../db.server";
-import { ConflictError, NotFoundError } from "../lib/errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors";
 import { D } from "../lib/money";
 import { fakeShopify } from "../test/fake-shopify";
 import { staff, testQuote, testShop } from "../test/factories";
@@ -182,4 +182,16 @@ test("a deleted variant is rejected and nothing is saved", async () => {
   const reloaded = await getQuote(SHOP, quote.id);
   expect(reloaded.lockVersion).toBe(0);
   expect(reloaded.currentVersion!.lines).toHaveLength(1); // testQuote's original line
+});
+
+test("a viewer can't create or edit quotes, even bypassing the page", async () => {
+  const viewer = staff(SHOP, shopify.admin, "VIEWER");
+  const quote = await testQuote(SHOP);
+
+  await expect(
+    createQuote(viewer, { locationId: "gid://shopify/CompanyLocation/1" }),
+  ).rejects.toBeInstanceOf(ForbiddenError);
+  await expect(saveDraftLines(viewer, quote.id, 0, [line(1, 1)], null)).rejects.toBeInstanceOf(
+    ForbiddenError,
+  );
 });

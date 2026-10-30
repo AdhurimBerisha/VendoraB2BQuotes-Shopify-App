@@ -4,6 +4,7 @@ import { D, type Money } from "../lib/money";
 import { getVariantPrices, type VariantPrice } from "../shopify/products.server";
 import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
+import { requirePermission } from "./permissions";
 import { type LineProblem, type PricedLine, lineTotal, quantityProblems, totals } from "./pricing";
 
 // What staff choose per line; catalog prices come from Shopify for the quote's company location.
@@ -42,6 +43,7 @@ const saveDraftLines = async (
   input: DraftLineInput[],
   quoteDiscountPct: Money | null,
 ) => {
+  requirePermission(actor, "quote.edit");
   const found = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
   if (!found) throw new NotFoundError();
   const currency = found.currencyCode;
