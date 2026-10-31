@@ -1,6 +1,8 @@
 import { getBoss } from "./queue.server";
 import { runPrivacy, type PrivacyJob } from "./privacy.server";
-import { runSyncDraftOrder, type SyncDraftOrderJob } from "./sync-draft-order.server";
+import type { SendInvoiceJob, SyncJob } from "../models/sync.server";
+import { type ProcessWebhookJob, runProcessWebhook } from "./process-webhook.server";
+import { runSendInvoiceJob, runSyncDraftOrder } from "./sync-draft-order.server";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -12,8 +14,14 @@ const startWorkers = async () => {
   globalThis.vendoraWorkersStarted = true;
   const boss = await getBoss();
 
-  await boss.work<SyncDraftOrderJob>("sync-draft-order", { batchSize: 1 }, async ([job]) =>
+  await boss.work<SyncJob>("sync-draft-order", { batchSize: 1 }, async ([job]) =>
     runSyncDraftOrder(job.data),
+  );
+  await boss.work<SendInvoiceJob>("send-invoice", { batchSize: 1 }, async ([job]) =>
+    runSendInvoiceJob(job.data),
+  );
+  await boss.work<ProcessWebhookJob>("process-webhook", { batchSize: 1 }, async ([job]) =>
+    runProcessWebhook(job.data),
   );
   await boss.work<PrivacyJob>("privacy", { batchSize: 1 }, async ([job]) => runPrivacy(job.data));
   console.log("[workers] started");

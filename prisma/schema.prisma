@@ -49,11 +49,12 @@ model Quote {
   assignedToUserId     BigInt?
   expiresAt            DateTime?
   draftOrderId         String?
-  syncStatus           String         @default("NONE") // NONE | QUEUED | SYNCING | SYNCED | FAILED
+  syncStatus           String         @default("NONE") // NONE | QUEUED | SYNCING | SYNCED | FAILED | NEEDS_ATTENTION
   syncError            String?
   syncClaimedAt        DateTime?
   syncedVersionId      String?
   invoiceSentVersionId String?
+  invoiceRequestedAt   DateTime? // when we last asked Shopify to send the invoice (dedupe + verify)
   shopifyUpdatedAt     DateTime?
   orderId              String?
   attention            Json?

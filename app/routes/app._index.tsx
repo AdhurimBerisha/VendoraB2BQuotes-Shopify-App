@@ -13,9 +13,10 @@ import { D, formatMoney } from "../lib/money";
 import { gid, parseForm, quantity } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { decide, submitQuote } from "../models/approval.server";
-import { createQuote, listQuotes, quoteLabel } from "../models/quote.server";
+import { attentionItems } from "../models/attention";
+import { cancelQuote, createQuote, listQuotes, quoteLabel } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
-import { requestSync } from "../models/sync.server";
+import { sendQuote } from "../models/sync.server";
 import { reviseQuote, saveDraftLines } from "../models/version.server";
 import { searchCompanies } from "../shopify/companies.server";
 
@@ -57,6 +58,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       syncStatus: quote.syncStatus,
       syncError: quote.syncError,
       draftOrderId: quote.draftOrderId,
+      attention: attentionItems(quote.attention).map((item) => item.message ?? item.code),
       total: formatMoney(quote.currentVersion?.total ?? D(0), quote.currencyCode),
     })),
   };
@@ -68,9 +70,13 @@ const createSchema = z.object({
   variantId: gid("ProductVariant"),
   quantity,
 });
-const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min(1) });
+const sendSchema = z.object({
+  intent: z.literal("send"),
+  quoteId: z.string().min(1),
+  message: z.string().max(5000).default(""),
+});
 const flowSchema = z.object({
-  intent: z.enum(["submit", "approve", "reject", "revise"]),
+  intent: z.enum(["submit", "approve", "reject", "revise", "cancel"]),
   quoteId: z.string().min(1),
   comment: z.string().max(2000).optional(),
 });
@@ -81,8 +87,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return runAction(async () => {
     const intent = form.get("intent");
-    if (intent === "sync") {
-      await requestSync(actor, parseForm(form, syncSchema).quoteId);
+    if (intent === "send") {
+      const { quoteId, message } = parseForm(form, sendSchema);
+      await sendQuote(actor, quoteId, message);
       return null;
     }
     if (intent !== "create") {
@@ -91,6 +98,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (intent === "approve") await decide(actor, quoteId, "APPROVED", comment);
       if (intent === "reject") await decide(actor, quoteId, "REJECTED", comment);
       if (intent === "revise") await reviseQuote(actor, quoteId);
+      if (intent === "cancel") await cancelQuote(actor, quoteId, comment);
       return null;
     }
     const input = parseForm(form, createSchema);
@@ -211,8 +219,9 @@ export default function Index() {
 const SYNC_LABELS: Record<string, string> = {
   QUEUED: "Waiting to sync",
   SYNCING: "Syncing…",
-  SYNCED: "Draft order created",
+  SYNCED: "Draft order synced",
   FAILED: "Sync failed",
+  NEEDS_ATTENTION: "Needs attention",
 };
 
 function QuoteRow({
@@ -225,12 +234,13 @@ function QuoteRow({
     syncStatus: string;
     syncError: string | null;
     draftOrderId: string | null;
+    attention: string[];
     total: string;
   };
 }) {
   const fetcher = useFetcher<typeof action>();
   const error = errorText(fetcher.data) ?? quote.syncError;
-  const canSync = quote.syncStatus === "NONE" || quote.syncStatus === "FAILED";
+  const syncing = quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING";
 
   return (
     <s-box padding="base" border="base" borderRadius="base">
@@ -252,19 +262,28 @@ function QuoteRow({
               Open draft order
             </s-link>
           )}
-          {!quote.draftOrderId && canSync && (
-            <fetcher.Form method="post">
-              <input type="hidden" name="intent" value="sync" />
-              <input type="hidden" name="quoteId" value={quote.id} />
+        </s-stack>
+        {quote.status === "APPROVED" && !syncing && (
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="send" />
+            <input type="hidden" name="quoteId" value={quote.id} />
+            <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
+              <s-text-field label="Message to the buyer" name="message"></s-text-field>
               <s-button
                 type="submit"
+                variant="primary"
                 {...(fetcher.state !== "idle" ? { loading: true } : {})}
               >
-                Convert to draft order
+                Send
               </s-button>
-            </fetcher.Form>
-          )}
-        </s-stack>
+            </s-grid>
+          </fetcher.Form>
+        )}
+        {quote.attention.map((item) => (
+          <s-text key={item} tone="caution">
+            Needs attention: {item}
+          </s-text>
+        ))}
         <QuoteFlow quoteId={quote.id} status={quote.status} />
         {error && <s-text tone="critical">{error}</s-text>}
       </s-stack>
@@ -307,6 +326,7 @@ function QuoteFlow({ quoteId, status }: { quoteId: string; status: string }) {
       )}
       {["APPROVED", "SENT", "DECLINED", "EXPIRED"].includes(status) &&
         button("revise", "Revise (new version)")}
+      {!["ORDERED", "CANCELLED"].includes(status) && button("cancel", "Cancel quote")}
       {error && <s-text tone="critical">{error}</s-text>}
     </s-stack>
   );

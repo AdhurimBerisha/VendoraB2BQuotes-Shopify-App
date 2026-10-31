@@ -5,8 +5,16 @@ const FAKE_LOCATION = {
   id: "gid://shopify/CompanyLocation/1",
   name: "Main",
   currency: "USD",
-  shippingAddress: { countryCode: "US" },
-  billingAddress: { countryCode: "US" },
+  shippingAddress: {
+    address1: "1 Ship St",
+    city: "Toronto",
+    zip: "M5V 1A1",
+    countryCode: "CA",
+    zoneCode: "ON",
+    companyName: "Fake Co",
+    recipient: "Ada Lovelace King",
+  },
+  billingAddress: null,
   company: {
     id: "gid://shopify/Company/1",
     name: "Fake Co",
@@ -47,36 +55,116 @@ const variantNode = (id: string, variant: FakeVariant) => {
   };
 };
 
-// Fake Shopify Admin client: counts draftOrderCreate calls and keeps its own draft
-// orders so tag search behaves like the real API. Grows into the fault-injection fake in M4.1.
+type FakeDraft = {
+  id: string;
+  tags: string[];
+  companyId: string;
+  locationId: string;
+  input: Record<string, unknown>;
+  invoiceSentAt: string | null;
+};
+
+const userErrorsJson = (field: string, messages: string[]) =>
+  Response.json({
+    data: { [field]: { draftOrder: null, deletedId: null, userErrors: messages.map((message) => ({ field: null, message })) } },
+  });
+
+// Fake Shopify Admin client: keeps its own draft orders so tag search, updates and invoices
+// behave like the real API, and counts calls. Grows into the fault-injection fake in M4.1.
 // `variants` (keyed by gid) answers price lookups; a gid not listed behaves like a deleted variant.
+// `subtotal` is what Shopify reports back for every draft order (testQuote's version total is 0).
 const fakeShopify = ({
   crashAfterCreate = false,
+  crashAfterInvoice = false,
+  createErrors = [] as string[],
   location = FAKE_LOCATION as object,
   variants = {} as Record<string, FakeVariant>,
+  subtotal = "0.00",
+  contactEmail = "buyer@example.com" as string | null,
 } = {}) => {
-  const drafts: { id: string; tags: string[] }[] = [];
-  let creates = 0;
+  const drafts: FakeDraft[] = [];
+  const calls = { create: 0, update: 0, delete: 0, invoice: 0 };
+  const find = (id: string) => drafts.find((draft) => draft.id === id);
+  const now = () => new Date().toISOString();
+
   const graphql = async (
     query: string,
     { variables }: { variables: any }, // eslint-disable-line @typescript-eslint/no-explicit-any
   ) => {
-    if (query.includes("draftOrderCreate")) {
-      creates++;
+    if (query.includes("VendoraDraftOrderCreate")) {
+      calls.create++;
+      if (createErrors.length) return userErrorsJson("draftOrderCreate", createErrors);
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const id = `gid://shopify/DraftOrder/${drafts.length + 1}`;
-      drafts.push({ id, tags: variables.input.tags });
+      const { purchasingCompany } = variables.input.purchasingEntity;
+      const draft: FakeDraft = {
+        id: `gid://shopify/DraftOrder/${drafts.length + 1}`,
+        tags: variables.input.tags,
+        companyId: purchasingCompany.companyId,
+        locationId: purchasingCompany.companyLocationId,
+        input: variables.input,
+        invoiceSentAt: null,
+      };
+      drafts.push(draft);
       if (crashAfterCreate) throw new Error("socket hang up");
       return Response.json({
-        data: { draftOrderCreate: { draftOrder: { id }, userErrors: [] } },
+        data: { draftOrderCreate: { draftOrder: { id: draft.id, updatedAt: now() }, userErrors: [] } },
       });
     }
-    if (query.includes("draftOrders")) {
-      const tag = /tag:'(.+)'/.exec(variables.query)![1];
-      const nodes = drafts.filter((d) => d.tags.includes(tag));
+    if (query.includes("VendoraDraftOrderUpdate")) {
+      calls.update++;
+      const draft = find(variables.id);
+      if (!draft) return userErrorsJson("draftOrderUpdate", ["Draft order does not exist"]);
+      draft.input = variables.input;
+      draft.tags = variables.input.tags;
       return Response.json({
-        data: { draftOrders: { nodes: nodes.map(({ id }) => ({ id })) } },
+        data: { draftOrderUpdate: { draftOrder: { id: draft.id, updatedAt: now() }, userErrors: [] } },
       });
+    }
+    if (query.includes("VendoraDraftOrderDelete")) {
+      calls.delete++;
+      const index = drafts.findIndex((draft) => draft.id === variables.input.id);
+      if (index === -1) return userErrorsJson("draftOrderDelete", ["Draft order does not exist"]);
+      drafts.splice(index, 1);
+      return Response.json({ data: { draftOrderDelete: { deletedId: variables.input.id, userErrors: [] } } });
+    }
+    if (query.includes("VendoraDraftOrderByTag")) {
+      const tag = /tag:'(.+)'/.exec(variables.query)![1];
+      const nodes = drafts
+        .filter((draft) => draft.tags.includes(tag))
+        .map((draft) => ({
+          id: draft.id,
+          status: "OPEN",
+          purchasingEntity: { company: { id: draft.companyId }, location: { id: draft.locationId } },
+        }));
+      return Response.json({ data: { draftOrders: { nodes } } });
+    }
+    if (query.includes("VendoraDraftOrder(")) {
+      const draft = find(variables.id);
+      return Response.json({
+        data: {
+          draftOrder: draft && {
+            id: draft.id,
+            status: "OPEN",
+            updatedAt: now(),
+            invoiceSentAt: draft.invoiceSentAt,
+            subtotalPriceSet: { presentmentMoney: { amount: subtotal, currencyCode: "USD" } },
+          },
+        },
+      });
+    }
+    if (query.includes("VendoraInvoiceSend")) {
+      calls.invoice++;
+      const draft = find(variables.id);
+      if (!draft) return userErrorsJson("draftOrderInvoiceSend", ["Draft order does not exist"]);
+      draft.invoiceSentAt = now();
+      if (crashAfterInvoice) throw new Error("socket hang up");
+      return Response.json({
+        data: { draftOrderInvoiceSend: { draftOrder: { id: draft.id, invoiceSentAt: draft.invoiceSentAt }, userErrors: [] } },
+      });
+    }
+    if (query.includes("VendoraContact")) {
+      const customer = { id: "gid://shopify/Customer/1", defaultEmailAddress: contactEmail ? { emailAddress: contactEmail } : null };
+      return Response.json({ data: { companyContact: { id: variables.id, customer } } });
     }
     if (query.includes("VendoraVariantPrices")) {
       // Without the country, Shopify ignores the location's market (see getLocationCountry).
@@ -91,12 +179,22 @@ const fakeShopify = ({
     }
     throw new Error(`Unexpected query: ${query}`);
   };
+
+  // A draft order that already exists in Shopify (e.g. made by someone else, or by a crashed attempt).
+  const seedDraft = (draft: { tags: string[]; companyId: string; locationId: string }) => {
+    const seeded: FakeDraft = { id: `gid://shopify/DraftOrder/${drafts.length + 1}`, input: {}, invoiceSentAt: null, ...draft };
+    drafts.push(seeded);
+    return seeded;
+  };
+
   return {
     admin: { graphql } as unknown as AdminApiContext,
     drafts,
-    creates: () => creates,
+    calls,
+    creates: () => calls.create,
+    seedDraft,
   };
 };
 
-export { fakeShopify };
+export { FAKE_LOCATION, fakeShopify };
 export type { FakeVariant };

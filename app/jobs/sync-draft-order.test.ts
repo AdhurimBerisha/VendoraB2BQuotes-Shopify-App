@@ -31,7 +31,7 @@ test("success: quote SYNCED with one draft order", async () => {
   const shopify = fakeShopify();
   const quote = await queuedQuote();
 
-  await runSyncDraftOrder({ shop: SHOP, quoteId: quote.id }, depsFor(shopify));
+  await runSyncDraftOrder({ shop: SHOP, quoteId: quote.id, op: "upsert" as const }, depsFor(shopify));
 
   const saved = await db.quote.findUniqueOrThrow({ where: { id: quote.id } });
   expect(saved.syncStatus).toBe("SYNCED");
@@ -41,7 +41,7 @@ test("success: quote SYNCED with one draft order", async () => {
 test("network error, then a retry after the stale window: SYNCED, still one create", async () => {
   const shopify = fakeShopify({ crashAfterCreate: true });
   const quote = await queuedQuote();
-  const job = { shop: SHOP, quoteId: quote.id };
+  const job = { shop: SHOP, quoteId: quote.id, op: "upsert" as const };
 
   await expect(runSyncDraftOrder(job, depsFor(shopify))).rejects.toThrow("socket hang up");
   await db.quote.update({
@@ -58,7 +58,7 @@ test("network error, then a retry after the stale window: SYNCED, still one crea
 test("early retry throws SyncInFlight so pg-boss tries again later", async () => {
   const shopify = fakeShopify({ crashAfterCreate: true });
   const quote = await queuedQuote();
-  const job = { shop: SHOP, quoteId: quote.id };
+  const job = { shop: SHOP, quoteId: quote.id, op: "upsert" as const };
 
   await expect(runSyncDraftOrder(job, depsFor(shopify))).rejects.toThrow("socket hang up");
   await expect(runSyncDraftOrder(job, depsFor(shopify))).rejects.toBeInstanceOf(SyncInFlight);
@@ -70,7 +70,7 @@ test("uninstalled shop: no Shopify call, quote untouched", async () => {
   const quote = await queuedQuote(UNINSTALLED_SHOP);
 
   await runSyncDraftOrder(
-    { shop: UNINSTALLED_SHOP, quoteId: quote.id },
+    { shop: UNINSTALLED_SHOP, quoteId: quote.id, op: "upsert" as const },
     {
       getAdmin: async () => {
         adminRequested = true;

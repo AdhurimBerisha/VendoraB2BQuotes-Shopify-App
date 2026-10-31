@@ -9,6 +9,8 @@ const getCompanyLocation = async (admin: AdminApiContext, id: string) => {
         companyLocation(id: $id) {
           id name currency
           company { id name mainContact { id customer { id } } }
+          shippingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
+          billingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
         }
       }`,
       { variables: { id } },
@@ -36,4 +38,18 @@ const searchCompanies = async (admin: AdminApiContext, query?: string, after?: s
   return data.companies;
 };
 
-export { getCompanyLocation, searchCompanies };
+const getContact = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraContact($id: ID!) {
+        companyContact(id: $id) { id customer { id defaultEmailAddress { emailAddress } } }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.companyContact ?? null;
+};
+
+export { getCompanyLocation, getContact, searchCompanies };

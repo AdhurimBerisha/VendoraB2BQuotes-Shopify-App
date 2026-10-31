@@ -1,10 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
+import { enqueue, getBoss } from "../jobs/queue.server";
 import { getCompanyLocation } from "../shopify/companies.server";
 import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
-import { requirePermission } from "./permissions";
+import { requireCancel, requirePermission } from "./permissions";
 
 type QuoteStatus =
   | "DRAFT"
@@ -23,7 +24,7 @@ const TRANSITIONS = {
   reject: ["PENDING_APPROVAL"],
   send: ["APPROVED"],
   revise: ["APPROVED", "SENT", "DECLINED", "EXPIRED"],
-  order: ["SENT"],
+  order: ["APPROVED", "SENT"], // a merchant may complete the draft order in Shopify before sending
   decline: ["SENT"],
   expire: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"],
   cancel: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "DECLINED", "EXPIRED"],
@@ -121,7 +122,27 @@ const listQuotes = async (
   };
 };
 
+// → CANCELLED; its draft order (if any) is deleted in Shopify by the sync job.
+const cancelQuote = async (actor: StaffActor, quoteId: string, reason?: string) => {
+  const quote = await getQuote(actor.shop, quoteId);
+  requireCancel(actor, quote);
+  await getBoss(); // start pg-boss outside the transaction (see enqueue)
+  await db.$transaction(async (tx) => {
+    await transition(tx, actor.shop, quoteId, "cancel", "CANCELLED");
+    await audit(tx, actor, quoteId, "quote.cancelled", { reason: reason ?? null });
+    if (!quote.draftOrderId) return;
+    // QUEUED so runSync can claim it.
+    await tx.quote.update({ where: { id: quoteId }, data: { syncStatus: "QUEUED", syncError: null } });
+    await enqueue(
+      "sync-draft-order",
+      { shop: actor.shop, quoteId, op: "delete" },
+      { singletonKey: `${quoteId}:delete`, tx },
+    );
+  });
+  console.log("quote cancelled", { shop: actor.shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+};
+
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
-export { TRANSITIONS, createQuote, getQuote, listQuotes, quoteLabel, transition };
+export { TRANSITIONS, cancelQuote, createQuote, getQuote, listQuotes, quoteLabel, transition };
 export type { QuoteAction, QuoteStatus };
