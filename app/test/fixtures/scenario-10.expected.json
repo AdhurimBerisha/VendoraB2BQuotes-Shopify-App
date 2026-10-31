@@ -1,0 +1,15 @@
+{
+  "rows": [
+    { "row": 2, "sku": "SNOW-MIN-01", "status": "WARNING", "codes": ["DUPLICATE_MERGED"], "detail": "rows 2, 3 → qty 15" },
+    { "row": 3, "sku": "SNOW-MIN-01", "status": "MERGED", "codes": ["MERGED_INTO"], "detail": "row 2" },
+    { "row": 4, "sku": "", "status": "ERROR", "codes": ["MISSING_SKU"] },
+    { "row": 5, "sku": "SNOW-VID-01", "status": "ERROR", "codes": ["INVALID_QUANTITY"] },
+    { "row": 6, "sku": "SNOW-VID-01", "status": "ERROR", "codes": ["INVALID_QUANTITY"] },
+    { "row": 7, "sku": "NOPE-999", "status": "ERROR", "codes": ["UNKNOWN_SKU"] },
+    { "row": 8, "sku": "SNOW-VID-01", "status": "ERROR", "codes": ["INVALID_PRICE"] },
+    { "row": 9, "sku": "SNOW-ARCH-01", "status": "ERROR", "codes": ["PRODUCT_NOT_ACTIVE"] },
+    { "row": 10, "sku": "GIFT-10", "status": "ERROR", "codes": ["GIFT_CARD"] },
+    { "row": 11, "sku": "SNOW-HYD-01", "status": "OK", "codes": [] }
+  ],
+  "summary": { "lines": 2, "ok": 1, "warnings": 1, "errors": 7, "merged": 1 }
+}

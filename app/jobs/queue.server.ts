@@ -1,7 +1,7 @@
 import { PgBoss, fromPrisma } from "pg-boss";
 import type { Prisma } from "@prisma/client";
 
-// Each milestone adds its queue here (M2.7 import-csv, …).
+// Each milestone adds its queue here.
 // sync-draft-order's retryDelay must exceed STALE_MS (120 s) so a retry can re-claim the quote.
 const QUEUES = {
   "sync-draft-order": {
@@ -13,6 +13,7 @@ const QUEUES = {
   },
   "send-invoice": { retryLimit: 6, retryDelay: 60, retryBackoff: true, retryDelayMax: 3600 },
   "process-webhook": { retryLimit: 8, retryDelay: 30, retryBackoff: true, retryDelayMax: 3600 },
+  "import-csv": { retryLimit: 3, retryDelay: 30, retryBackoff: true, expireInSeconds: 600 },
   privacy: { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
 };
 type QueueName = keyof typeof QUEUES;

@@ -1,6 +1,7 @@
 import { getBoss } from "./queue.server";
 import { runPrivacy, type PrivacyJob } from "./privacy.server";
 import type { SendInvoiceJob, SyncJob } from "../models/sync.server";
+import { type ImportCsvJob, runImportCsv } from "./import-csv.server";
 import { type ProcessWebhookJob, runProcessWebhook } from "./process-webhook.server";
 import { runSendInvoiceJob, runSyncDraftOrder } from "./sync-draft-order.server";
 
@@ -23,6 +24,7 @@ const startWorkers = async () => {
   await boss.work<ProcessWebhookJob>("process-webhook", { batchSize: 1 }, async ([job]) =>
     runProcessWebhook(job.data),
   );
+  await boss.work<ImportCsvJob>("import-csv", { batchSize: 1 }, async ([job]) => runImportCsv(job.data));
   await boss.work<PrivacyJob>("privacy", { batchSize: 1 }, async ([job]) => runPrivacy(job.data));
   console.log("[workers] started");
 

@@ -1,0 +1,11 @@
+SKU,Quantity,Price,Discount,Note
+SNOW-MIN-01,10,,,
+SNOW-MIN-01,5,,,repeat order
+,3,,,
+SNOW-VID-01,abc,,,
+SNOW-VID-01,-2,,,
+NOPE-999,4,,,
+SNOW-VID-01,2,100.5x,,
+SNOW-ARCH-01,1,,,
+GIFT-10,1,,,
+SNOW-HYD-01,2,550.00,5,

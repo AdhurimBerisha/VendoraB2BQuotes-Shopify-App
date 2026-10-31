@@ -103,5 +103,24 @@ const getVariantPrices = async (
   return prices;
 };
 
-export { getVariantPrices };
+// Variants whose SKU matches one of `skus` (≤ 50 per call). Shopify's search may also return
+// partial matches, so callers compare SKUs exactly; first: 250 leaves room for those.
+const findVariantsBySku = async (admin: AdminApiContext, skus: string[]) => {
+  if (skus.length === 0) return [];
+  const query = skus.map((sku) => `sku:"${sku.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(" OR ");
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraVariantsBySku($query: String!) {
+        productVariants(first: 250, query: $query) { nodes { id sku } }
+      }`,
+      { variables: { query } },
+    ),
+  );
+  const { data } = await response.json();
+  if (!data?.productVariants) throw new Error("Shopify returned no product variants");
+  return data.productVariants.nodes;
+};
+
+export { findVariantsBySku, getVariantPrices };
 export type { VariantPrice };

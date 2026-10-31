@@ -24,6 +24,8 @@ const FAKE_LOCATION = {
 
 type FakeVariant = {
   price: string;
+  sku?: string;
+  isGiftCard?: boolean;
   currencyCode?: string;
   status?: string;
   quantityRule?: { minimum: number; maximum: number | null; increment: number };
@@ -37,11 +39,11 @@ const variantNode = (id: string, variant: FakeVariant) => {
   const currencyCode = variant.currencyCode ?? "USD";
   return {
     id,
-    sku: `SKU-${n}`,
+    sku: variant.sku ?? `SKU-${n}`,
     title: "Default Title",
     inventoryQuantity: variant.inventoryQuantity ?? null,
     inventoryItem: { tracked: variant.inventoryQuantity != null },
-    product: { id: `gid://shopify/Product/${n}`, title: `Product ${n}`, status: variant.status ?? "ACTIVE", isGiftCard: false },
+    product: { id: `gid://shopify/Product/${n}`, title: `Product ${n}`, status: variant.status ?? "ACTIVE", isGiftCard: variant.isGiftCard ?? false },
     contextualPricing: {
       price: { amount: variant.price, currencyCode },
       quantityRule: variant.quantityRule ?? { minimum: 1, maximum: null, increment: 1 },
@@ -83,7 +85,7 @@ const fakeShopify = ({
   contactEmail = "buyer@example.com" as string | null,
 } = {}) => {
   const drafts: FakeDraft[] = [];
-  const calls = { create: 0, update: 0, delete: 0, invoice: 0 };
+  const calls = { create: 0, update: 0, delete: 0, invoice: 0, skuSearch: 0 };
   const find = (id: string) => drafts.find((draft) => draft.id === id);
   const now = () => new Date().toISOString();
 
@@ -165,6 +167,17 @@ const fakeShopify = ({
     if (query.includes("VendoraContact")) {
       const customer = { id: "gid://shopify/Customer/1", defaultEmailAddress: contactEmail ? { emailAddress: contactEmail } : null };
       return Response.json({ data: { companyContact: { id: variables.id, customer } } });
+    }
+    if (query.includes("VendoraVariantsBySku")) {
+      calls.skuSearch++;
+      // Case-insensitive exact match (Shopify may also return partial matches; callers filter).
+      const terms = new Set(
+        [...(variables.query as string).matchAll(/sku:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].toLowerCase()),
+      );
+      const nodes = Object.entries(variants)
+        .map(([id, variant]) => ({ id, sku: variantNode(id, variant).sku }))
+        .filter(({ sku }) => terms.has(sku.toLowerCase()));
+      return Response.json({ data: { productVariants: { nodes } } });
     }
     if (query.includes("VendoraVariantPrices")) {
       // Without the country, Shopify ignores the location's market (see getLocationCountry).

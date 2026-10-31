@@ -308,7 +308,12 @@ function QuoteFlow({ quoteId, status }: { quoteId: string; status: string }) {
 
   return (
     <s-stack direction="block" gap="small-200">
-      {status === "DRAFT" && button("submit", "Submit")}
+      {status === "DRAFT" && (
+        <s-stack direction="inline" gap="base" alignItems="center">
+          {button("submit", "Submit")}
+          <s-link href={`/app/quotes/${quoteId}/import`}>Import lines from CSV</s-link>
+        </s-stack>
+      )}
       {status === "PENDING_APPROVAL" && (
         <s-stack direction="block" gap="small-200">
           {button("approve", "Approve")}

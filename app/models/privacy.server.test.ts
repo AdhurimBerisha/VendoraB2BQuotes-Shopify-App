@@ -61,7 +61,7 @@ test("every shop-scoped model is covered by redactShop", () => {
     .filter((model) => model.fields.some((field) => field.name === "shop"))
     .map((model) => model.name)
     .sort();
-  expect(shopScoped).toEqual(["AuditEvent", "PrivacyRequest", "Quote", "Session", "StaffMember", "WebhookEvent"]);
+  expect(shopScoped).toEqual(["AuditEvent", "Import", "PrivacyRequest", "Quote", "Session", "StaffMember", "WebhookEvent"]);
 });
 
 test("customers/redact anonymises only that customer's quotes", async () => {

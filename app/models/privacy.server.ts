@@ -7,6 +7,7 @@ const customerGid = (id: number) => `gid://shopify/Customer/${id}`;
 const redactShop = async (shop: string) => {
   await db.$transaction([
     db.auditEvent.deleteMany({ where: { shop } }),
+    db.import.deleteMany({ where: { shop } }),
     db.privacyRequest.deleteMany({ where: { shop } }),
     db.quote.deleteMany({ where: { shop } }), // versions and lines cascade
     db.session.deleteMany({ where: { shop } }),

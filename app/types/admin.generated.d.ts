@@ -126,6 +126,13 @@ export type VendoraVariantPricesQuery = { nodes: Array<AdminTypes.Maybe<(
         )> } } }
   )>> };
 
+export type VendoraVariantsBySkuQueryVariables = AdminTypes.Exact<{
+  query: AdminTypes.Scalars['String']['input'];
+}>;
+
+
+export type VendoraVariantsBySkuQuery = { productVariants: { nodes: Array<Pick<AdminTypes.ProductVariant, 'id' | 'sku'>> } };
+
 export type VendoraShopInfoQueryVariables = AdminTypes.Exact<{ [key: string]: never; }>;
 
 
@@ -140,6 +147,7 @@ interface GeneratedQueryTypes {
   "#graphql\n      query VendoraDraftOrder($id: ID!) {\n        draftOrder(id: $id) {\n          id status updatedAt invoiceSentAt\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n        }\n      }": {return: VendoraDraftOrderQuery, variables: VendoraDraftOrderQueryVariables},
   "#graphql\n      query VendoraLocationCountry($id: ID!) {\n        companyLocation(id: $id) {\n          shippingAddress { countryCode }\n          billingAddress { countryCode }\n        }\n      }": {return: VendoraLocationCountryQuery, variables: VendoraLocationCountryQueryVariables},
   "#graphql\n        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!, $country: CountryCode) {\n          nodes(ids: $ids) {\n            ... on ProductVariant {\n              id\n              sku\n              title\n              inventoryQuantity\n              inventoryItem { tracked }\n              product { id title status isGiftCard }\n              contextualPricing(context: { companyLocationId: $companyLocationId, country: $country }) {\n                price { amount currencyCode }\n                quantityRule { minimum maximum increment }\n                quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }\n              }\n            }\n          }\n        }": {return: VendoraVariantPricesQuery, variables: VendoraVariantPricesQueryVariables},
+  "#graphql\n      query VendoraVariantsBySku($query: String!) {\n        productVariants(first: 250, query: $query) { nodes { id sku } }\n      }": {return: VendoraVariantsBySkuQuery, variables: VendoraVariantsBySkuQueryVariables},
   "#graphql\n    query VendoraShopInfo {\n      shop { id ianaTimezone currencyCode }\n    }": {return: VendoraShopInfoQuery, variables: VendoraShopInfoQueryVariables},
 }
 
