@@ -1,5 +1,5 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { enqueue, getBoss } from "../jobs/queue.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
@@ -8,7 +8,7 @@ import { ShopifyUserErrors } from "../shopify/client.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import * as drafts from "../shopify/draft-orders.server";
 import type { Actor, StaffActor, SystemActor } from "./actor";
-import { raise } from "./attention";
+import { raise, withoutItems } from "./attention";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { BLOCKING, type LineProblem } from "./pricing";
@@ -175,6 +175,9 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
       where: { id: quote.id },
       data: {
         syncStatus: mismatch ? "NEEDS_ATTENTION" : "SYNCED",
+        // B-18: one error model; a successful sync clears what it resolved.
+        syncError: null,
+        attention: withoutItems(quote.attention, ["SYNC_FAILED", "TAG_COLLISION", "DRAFT_DELETED", "CHANGED_IN_SHOPIFY", "PRICE_MISMATCH"]) ?? Prisma.DbNull,
         draftOrderId: result.id,
         syncedVersionId: version.id,
         shopifyUpdatedAt: new Date(result.updatedAt),
@@ -270,7 +273,10 @@ const runSendInvoice = async (admin: AdminApiContext, job: SendInvoiceJob) => {
 
 const markSent = async (quoteId: string, job: SendInvoiceJob) => {
   await db.$transaction(async (tx) => {
-    await transition(tx, job.shop, quoteId, "send", "SENT");
+    const { attention } = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { attention: true } });
+    await transition(tx, job.shop, quoteId, "send", "SENT", {
+      attention: withoutItems(attention, ["INVOICE_FAILED"]) ?? Prisma.DbNull,
+    });
     await audit(tx, system(job.shop, "send-invoice"), quoteId, "quote.sent", { versionId: job.versionId });
   });
   console.log("quote sent", { shop: job.shop, quoteId, versionId: job.versionId });

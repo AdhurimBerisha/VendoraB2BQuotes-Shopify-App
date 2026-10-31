@@ -3,14 +3,6 @@
 /* eslint-disable */
 import type * as AdminTypes from './admin.types.d.ts';
 
-export type VendoraQuoteShopAndVariantsQueryVariables = AdminTypes.Exact<{ [key: string]: never; }>;
-
-
-export type VendoraQuoteShopAndVariantsQuery = { shop: { plan: Pick<AdminTypes.ShopPlan, 'shopifyPlus' | 'partnerDevelopment'> }, productVariants: { nodes: Array<(
-      Pick<AdminTypes.ProductVariant, 'id' | 'title'>
-      & { product: Pick<AdminTypes.Product, 'title'> }
-    )> } };
-
 export type VendoraCompanyLocationQueryVariables = AdminTypes.Exact<{
   id: AdminTypes.Scalars['ID']['input'];
 }>;
@@ -46,10 +38,17 @@ export type VendoraContactQueryVariables = AdminTypes.Exact<{
 export type VendoraContactQuery = { companyContact?: AdminTypes.Maybe<(
     Pick<AdminTypes.CompanyContact, 'id'>
     & { customer: (
-      Pick<AdminTypes.Customer, 'id'>
+      Pick<AdminTypes.Customer, 'id' | 'displayName'>
       & { defaultEmailAddress?: AdminTypes.Maybe<Pick<AdminTypes.CustomerEmailAddress, 'emailAddress'>> }
     ) }
   )> };
+
+export type VendoraCompanyNamesQueryVariables = AdminTypes.Exact<{
+  ids: Array<AdminTypes.Scalars['ID']['input']> | AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraCompanyNamesQuery = { nodes: Array<AdminTypes.Maybe<Pick<AdminTypes.Company, 'id' | 'name'>>> };
 
 export type VendoraDraftOrderCreateMutationVariables = AdminTypes.Exact<{
   input: AdminTypes.DraftOrderInput;
@@ -96,6 +95,16 @@ export type VendoraDraftOrderQuery = { draftOrder?: AdminTypes.Maybe<(
     & { subtotalPriceSet: { presentmentMoney: Pick<AdminTypes.MoneyV2, 'amount' | 'currencyCode'> } }
   )> };
 
+export type VendoraDraftOrderSummaryQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraDraftOrderSummaryQuery = { draftOrder?: AdminTypes.Maybe<(
+    Pick<AdminTypes.DraftOrder, 'id' | 'status' | 'invoiceSentAt' | 'invoiceUrl'>
+    & { subtotalPriceSet: { presentmentMoney: Pick<AdminTypes.MoneyV2, 'amount' | 'currencyCode'> }, totalTaxSet: { presentmentMoney: Pick<AdminTypes.MoneyV2, 'amount'> }, totalPriceSet: { presentmentMoney: Pick<AdminTypes.MoneyV2, 'amount'> }, order?: AdminTypes.Maybe<Pick<AdminTypes.Order, 'id' | 'name'>> }
+  )> };
+
 export type VendoraInvoiceSendMutationVariables = AdminTypes.Exact<{
   id: AdminTypes.Scalars['ID']['input'];
   email?: AdminTypes.InputMaybe<AdminTypes.EmailInput>;
@@ -139,12 +148,13 @@ export type VendoraShopInfoQueryVariables = AdminTypes.Exact<{ [key: string]: ne
 export type VendoraShopInfoQuery = { shop: Pick<AdminTypes.Shop, 'id' | 'ianaTimezone' | 'currencyCode'> };
 
 interface GeneratedQueryTypes {
-  "#graphql\n    query VendoraQuoteShopAndVariants {\n      shop { plan { shopifyPlus partnerDevelopment } }\n      productVariants(first: 50) {\n        nodes { id title product { title } }\n      }\n    }": {return: VendoraQuoteShopAndVariantsQuery, variables: VendoraQuoteShopAndVariantsQueryVariables},
   "#graphql\n      query VendoraCompanyLocation($id: ID!) {\n        companyLocation(id: $id) {\n          id name currency\n          company { id name mainContact { id customer { id } } }\n          shippingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }\n          billingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }\n        }\n      }": {return: VendoraCompanyLocationQuery, variables: VendoraCompanyLocationQueryVariables},
   "#graphql\n      query VendoraCompanySearch($query: String, $after: String) {\n        companies(first: 20, after: $after, query: $query, sortKey: NAME) {\n          nodes { id name mainContact { id } locations(first: 50) { nodes { id name currency } } }\n          pageInfo { hasNextPage endCursor }\n        }\n      }": {return: VendoraCompanySearchQuery, variables: VendoraCompanySearchQueryVariables},
-  "#graphql\n      query VendoraContact($id: ID!) {\n        companyContact(id: $id) { id customer { id defaultEmailAddress { emailAddress } } }\n      }": {return: VendoraContactQuery, variables: VendoraContactQueryVariables},
+  "#graphql\n      query VendoraContact($id: ID!) {\n        companyContact(id: $id) { id customer { id displayName defaultEmailAddress { emailAddress } } }\n      }": {return: VendoraContactQuery, variables: VendoraContactQueryVariables},
+  "#graphql\n      query VendoraCompanyNames($ids: [ID!]!) {\n        nodes(ids: $ids) { ... on Company { id name } }\n      }": {return: VendoraCompanyNamesQuery, variables: VendoraCompanyNamesQueryVariables},
   "#graphql\n      query VendoraDraftOrderByTag($query: String!) {\n        draftOrders(first: 5, query: $query) {\n          nodes { id status purchasingEntity { ... on PurchasingCompany { company { id } location { id } } } }\n        }\n      }": {return: VendoraDraftOrderByTagQuery, variables: VendoraDraftOrderByTagQueryVariables},
   "#graphql\n      query VendoraDraftOrder($id: ID!) {\n        draftOrder(id: $id) {\n          id status updatedAt invoiceSentAt\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n        }\n      }": {return: VendoraDraftOrderQuery, variables: VendoraDraftOrderQueryVariables},
+  "#graphql\n      query VendoraDraftOrderSummary($id: ID!) {\n        draftOrder(id: $id) {\n          id status invoiceSentAt invoiceUrl\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n          totalTaxSet { presentmentMoney { amount } }\n          totalPriceSet { presentmentMoney { amount } }\n          order { id name }\n        }\n      }": {return: VendoraDraftOrderSummaryQuery, variables: VendoraDraftOrderSummaryQueryVariables},
   "#graphql\n      query VendoraLocationCountry($id: ID!) {\n        companyLocation(id: $id) {\n          shippingAddress { countryCode }\n          billingAddress { countryCode }\n        }\n      }": {return: VendoraLocationCountryQuery, variables: VendoraLocationCountryQueryVariables},
   "#graphql\n        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!, $country: CountryCode) {\n          nodes(ids: $ids) {\n            ... on ProductVariant {\n              id\n              sku\n              title\n              inventoryQuantity\n              inventoryItem { tracked }\n              product { id title status isGiftCard }\n              contextualPricing(context: { companyLocationId: $companyLocationId, country: $country }) {\n                price { amount currencyCode }\n                quantityRule { minimum maximum increment }\n                quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }\n              }\n            }\n          }\n        }": {return: VendoraVariantPricesQuery, variables: VendoraVariantPricesQueryVariables},
   "#graphql\n      query VendoraVariantsBySku($query: String!) {\n        productVariants(first: 250, query: $query) { nodes { id sku } }\n      }": {return: VendoraVariantsBySkuQuery, variables: VendoraVariantsBySkuQueryVariables},

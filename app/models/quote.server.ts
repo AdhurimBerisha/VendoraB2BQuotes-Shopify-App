@@ -1,21 +1,24 @@
 import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { enqueue, getBoss } from "../jobs/queue.server";
-import { getCompanyLocation } from "../shopify/companies.server";
+import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
 import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
 import { requireCancel, requirePermission } from "./permissions";
 
-type QuoteStatus =
-  | "DRAFT"
-  | "PENDING_APPROVAL"
-  | "APPROVED"
-  | "SENT"
-  | "ORDERED"
-  | "DECLINED"
-  | "EXPIRED"
-  | "CANCELLED";
+const QUOTE_STATUSES = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "SENT",
+  "ORDERED",
+  "DECLINED",
+  "EXPIRED",
+  "CANCELLED",
+] as const;
+type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 
 // Which statuses each action may start from.
 const TRANSITIONS = {
@@ -98,19 +101,45 @@ const getQuote = async (shop: string, id: string) => {
   return quote;
 };
 
+type QuoteFilters = {
+  status?: QuoteStatus;
+  companyId?: string;
+  companyIds?: string[]; // from a company-name search
+  number?: number;
+};
+
+// Shared by the list and the CSV export.
+const quoteWhere = (shop: string, filters: QuoteFilters): Prisma.QuoteWhereInput => ({
+  shop,
+  status: filters.status,
+  number: filters.number,
+  companyId: filters.companyIds ? { in: filters.companyIds } : filters.companyId,
+});
+
+// The quote list's URL parameters (list page and CSV export): bad values are ignored.
+const listFiltersSchema = z.object({
+  status: z.enum(QUOTE_STATUSES).optional().catch(undefined),
+  q: z.string().trim().max(100).optional().catch(undefined),
+  cursor: z.string().max(40).optional().catch(undefined),
+});
+
+// Search text → filters: "1042" or "Q-1042" is a quote number, anything else a company name.
+const searchFilters = async (actor: StaffActor, q: string | undefined, prefix: string): Promise<QuoteFilters> => {
+  const text = q?.trim();
+  if (!text) return {};
+  const digits = text.toUpperCase().startsWith(prefix.toUpperCase()) ? text.slice(prefix.length) : text;
+  if (/^\d+$/.test(digits)) return { number: Number(digits) };
+  const companies = await searchCompanies(actor.admin, text);
+  return { companyIds: companies.nodes.map((company) => company.id) };
+};
+
 const listQuotes = async (
   shop: string,
-  filters: {
-    status?: QuoteStatus;
-    companyId?: string;
-    number?: number;
-    cursor?: string;
-    take?: number;
-  } = {},
+  filters: QuoteFilters & { cursor?: string; take?: number } = {},
 ) => {
   const take = Math.min(filters.take ?? 25, 100);
   const rows = await db.quote.findMany({
-    where: { shop, status: filters.status, companyId: filters.companyId, number: filters.number },
+    where: quoteWhere(shop, filters),
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: take + 1,
     ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
@@ -144,5 +173,17 @@ const cancelQuote = async (actor: StaffActor, quoteId: string, reason?: string) 
 
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
-export { TRANSITIONS, cancelQuote, createQuote, getQuote, listQuotes, quoteLabel, transition };
-export type { QuoteAction, QuoteStatus };
+export {
+  QUOTE_STATUSES,
+  TRANSITIONS,
+  cancelQuote,
+  createQuote,
+  getQuote,
+  listFiltersSchema,
+  listQuotes,
+  quoteLabel,
+  quoteWhere,
+  searchFilters,
+  transition,
+};
+export type { QuoteAction, QuoteFilters, QuoteStatus };

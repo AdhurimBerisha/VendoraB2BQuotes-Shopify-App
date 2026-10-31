@@ -27,6 +27,12 @@ const withItem = (current: unknown, item: Omit<AttentionItem, "at">): AttentionI
   { ...item, at: new Date().toISOString() },
 ];
 
+// Removes the items a successful retry resolved; null when nothing is left.
+const withoutItems = (current: unknown, codes: AttentionCode[]): AttentionItem[] | null => {
+  const left = attentionItems(current).filter((item) => !codes.includes(item.code));
+  return left.length ? left : null;
+};
+
 const raise = async (
   tx: Prisma.TransactionClient,
   shop: string,
@@ -38,5 +44,5 @@ const raise = async (
   console.log("attention raised", { shop, quoteId, code: item.code });
 };
 
-export { attentionItems, raise, withItem };
+export { attentionItems, raise, withItem, withoutItems };
 export type { AttentionCode, AttentionItem };

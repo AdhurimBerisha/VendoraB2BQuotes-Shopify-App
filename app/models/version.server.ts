@@ -221,5 +221,47 @@ const reviseQuote = async (actor: StaffActor, quoteId: string) => {
   });
 };
 
-export { refreshPrices, reviseQuote, saveDraftLines };
-export type { DraftLineInput };
+type LineView = { quantity: number; unitPrice: string; discountPct: string | null; lineTotal: string };
+type LineDiff = {
+  variantId: string;
+  title: string;
+  change: "added" | "removed" | "changed";
+  before?: LineView;
+  after?: LineView;
+};
+type DiffLine = {
+  variantId: string;
+  titleSnapshot: string;
+  quantity: number;
+  catalogPrice: Money;
+  overridePrice: Money | null;
+  discountPct: Money | null;
+  lineTotal: Money;
+};
+
+// What changed from version `before` to `after`, per variant (pure).
+const diffVersions = (before: { lines: DiffLine[] }, after: { lines: DiffLine[] }): LineDiff[] => {
+  const view = (line: DiffLine): LineView => ({
+    quantity: line.quantity,
+    unitPrice: (line.overridePrice ?? line.catalogPrice).toString(),
+    discountPct: line.discountPct?.toString() ?? null,
+    lineTotal: line.lineTotal.toString(),
+  });
+  const old = new Map(before.lines.map((line) => [line.variantId, line]));
+  const next = new Map(after.lines.map((line) => [line.variantId, line]));
+  const diffs: LineDiff[] = [];
+  for (const [variantId, line] of old) {
+    if (!next.has(variantId)) diffs.push({ variantId, title: line.titleSnapshot, change: "removed", before: view(line) });
+  }
+  for (const [variantId, line] of next) {
+    const previous = old.get(variantId);
+    if (!previous) diffs.push({ variantId, title: line.titleSnapshot, change: "added", after: view(line) });
+    else if (JSON.stringify(view(previous)) !== JSON.stringify(view(line))) {
+      diffs.push({ variantId, title: line.titleSnapshot, change: "changed", before: view(previous), after: view(line) });
+    }
+  }
+  return diffs;
+};
+
+export { diffVersions, refreshPrices, reviseQuote, saveDraftLines };
+export type { DraftLineInput, LineDiff };

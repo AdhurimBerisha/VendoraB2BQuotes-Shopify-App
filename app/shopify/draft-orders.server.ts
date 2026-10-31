@@ -181,6 +181,28 @@ const getDraftOrder = async (admin: AdminApiContext, id: string) => {
   return data?.draftOrder ?? null;
 };
 
+// What the quote page shows about the draft order: Shopify's final totals and the order.
+// Needs read_orders (order); kept apart from getDraftOrder so syncing never depends on it.
+const getDraftOrderSummary = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraDraftOrderSummary($id: ID!) {
+        draftOrder(id: $id) {
+          id status invoiceSentAt invoiceUrl
+          subtotalPriceSet { presentmentMoney { amount currencyCode } }
+          totalTaxSet { presentmentMoney { amount } }
+          totalPriceSet { presentmentMoney { amount } }
+          order { id name }
+        }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.draftOrder ?? null;
+};
+
 const sendInvoice = async (
   admin: AdminApiContext,
   id: string,
@@ -205,6 +227,7 @@ export {
   draftOrderInput,
   findDraftOrdersByTag,
   getDraftOrder,
+  getDraftOrderSummary,
   quoteTag,
   sendInvoice,
   toMailingAddress,

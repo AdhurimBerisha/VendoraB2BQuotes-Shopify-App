@@ -43,7 +43,7 @@ const getContact = async (admin: AdminApiContext, id: string) => {
     admin.graphql(
       `#graphql
       query VendoraContact($id: ID!) {
-        companyContact(id: $id) { id customer { id defaultEmailAddress { emailAddress } } }
+        companyContact(id: $id) { id customer { id displayName defaultEmailAddress { emailAddress } } }
       }`,
       { variables: { id } },
     ),
@@ -52,4 +52,24 @@ const getContact = async (admin: AdminApiContext, id: string) => {
   return data?.companyContact ?? null;
 };
 
-export { getCompanyLocation, getContact, searchCompanies };
+// Company names for a page of quotes, in one call. Deleted companies are missing from the map.
+const companyNames = async (admin: AdminApiContext, ids: string[]) => {
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraCompanyNames($ids: [ID!]!) {
+        nodes(ids: $ids) { ... on Company { id name } }
+      }`,
+      { variables: { ids } },
+    ),
+  );
+  const { data } = await response.json();
+  for (const node of data?.nodes ?? []) {
+    if (node && "name" in node) names.set(node.id, node.name);
+  }
+  return names;
+};
+
+export { companyNames, getCompanyLocation, getContact, searchCompanies };

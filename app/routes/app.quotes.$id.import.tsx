@@ -1,10 +1,13 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { useFetcher, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import { useTranslation } from "react-i18next";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
+import ErrorBanner from "../components/ErrorBanner";
+import usePollWhile from "../components/usePollWhile";
 import db from "../db.server";
-import { type ActionResult, runAction } from "../lib/action.server";
+import { runAction } from "../lib/action.server";
 import { NotFoundError, UserError } from "../lib/errors";
 import { parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
@@ -63,13 +66,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   });
 };
 
-// ponytail: shows raw translation keys and row codes until app/locales arrives in M2.8.
-const errorText = (result: ActionResult<unknown> | undefined) => {
-  if (!result || result.ok) return null;
-  const params = Object.entries(result.error.params).map(([k, v]) => `${k}: ${v}`);
-  return [result.error.key, ...params].join(" · ");
-};
-
 // Browser download of text we already have (embedded pages can't download from an
 // authenticated URL with a plain link).
 const downloadText = (fileName: string, text: string) => {
@@ -90,30 +86,23 @@ const STATUS_TONE: Record<RowStatus, "success" | "warning" | "critical" | "info"
 
 export default function ImportPage() {
   const { quoteId, label, locked, imp, report, reportCsv } = useLoaderData<typeof loader>();
+  const { t } = useTranslation();
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
-  const revalidator = useRevalidator();
   const dropZone = useRef<HTMLElementTagNameMap["s-drop-zone"]>(null);
   const [filter, setFilter] = useState<RowStatus | "ALL">("ALL");
   const busy = fetcher.state !== "idle" ? { loading: true } : {};
-  const error = errorText(fetcher.data);
 
-  // After upload: show the import; after commit: back to the quotes.
+  // After upload: show the import; after commit: back to the quote.
   useEffect(() => {
     const result = fetcher.data;
     if (fetcher.state !== "idle" || !result?.ok) return;
-    navigate(result.data.committed ? "/app" : `/app/quotes/${quoteId}/import?import=${result.data.importId}`);
+    navigate(result.data.committed ? `/app/quotes/${quoteId}` : `/app/quotes/${quoteId}/import?import=${result.data.importId}`);
   }, [fetcher.state, fetcher.data, navigate, quoteId]);
 
-  // Big files are validated in the background: refresh every 2 s.
+  // Big files are validated in the background.
   const validating = imp?.status === "VALIDATING";
-  useEffect(() => {
-    if (!validating) return;
-    const timer = setInterval(() => {
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [validating, revalidator]);
+  usePollWhile(validating, 2000);
 
   const upload = () => {
     const file = dropZone.current?.files?.[0];
@@ -127,36 +116,33 @@ export default function ImportPage() {
   const showUpload = !imp || imp.status === "FAILED" || imp.status === "COMMITTED";
 
   return (
-    <s-page heading={`Import lines into ${label}`}>
-      <s-link slot="breadcrumb-actions" href="/app">
-        Quotes
+    <s-page heading={t("import.title", { label })}>
+      <s-link slot="breadcrumb-actions" href={`/app/quotes/${quoteId}`}>
+        {label}
       </s-link>
       {locked && (
-        <s-banner tone="warning" heading="This version is locked">
-          Revise the quote to get an editable version, then import.
+        <s-banner tone="warning" heading={t("import.locked.heading")}>
+          {t("import.locked.body")}
         </s-banner>
       )}
-      {error && <s-banner tone="critical">{error}</s-banner>}
+      <ErrorBanner result={fetcher.data} />
 
       {showUpload && !locked && (
-        <s-section heading="Upload a CSV file">
+        <s-section heading={t("import.upload.title")}>
           <s-stack direction="block" gap="base">
             {imp?.status === "FAILED" && (
-              <s-banner tone="critical" heading="The last file could not be checked">
+              <s-banner tone="critical" heading={t("import.upload.failed")}>
                 {imp.error}
               </s-banner>
             )}
-            <s-paragraph>
-              Columns: sku and quantity (required), price and discount (optional). Comma or
-              semicolon separated, up to 10,000 rows and 5 MB. Repeated SKUs are merged.
-            </s-paragraph>
-            <s-drop-zone ref={dropZone} label="CSV file" name="file" accept=".csv,text/csv"></s-drop-zone>
+            <s-paragraph>{t("import.upload.help")}</s-paragraph>
+            <s-drop-zone ref={dropZone} label={t("import.upload.file")} name="file" accept=".csv,text/csv"></s-drop-zone>
             <s-stack direction="inline" gap="base">
               <s-button variant="primary" onClick={upload} {...busy}>
-                Check file
+                {t("import.upload.check")}
               </s-button>
               <s-button variant="tertiary" onClick={() => downloadText("vendora-import-template.csv", TEMPLATE_CSV)}>
-                Download template
+                {t("import.upload.template")}
               </s-button>
             </s-stack>
           </s-stack>
@@ -166,8 +152,8 @@ export default function ImportPage() {
       {validating && imp && (
         <s-section heading={imp.fileName}>
           <s-stack direction="inline" gap="base" alignItems="center">
-            <s-spinner accessibilityLabel="Checking the file"></s-spinner>
-            <s-text>Checking {imp.rowCount} rows…</s-text>
+            <s-spinner accessibilityLabel={t("import.checking.label")}></s-spinner>
+            <s-text>{t("import.checking.rows", { count: imp.rowCount })}</s-text>
           </s-stack>
         </s-section>
       )}
@@ -176,37 +162,38 @@ export default function ImportPage() {
         <s-section heading={imp.fileName}>
           <s-stack direction="block" gap="base">
             <s-stack direction="inline" gap="small-200">
-              <s-badge tone="success">{report.summary.lines} lines to add</s-badge>
-              <s-badge tone="warning">{report.summary.warnings} warnings</s-badge>
-              <s-badge tone="critical">{report.summary.errors} errors</s-badge>
-              <s-badge tone="info">{report.summary.merged} merged rows</s-badge>
+              <s-badge tone="success">{t("import.summary.lines", { count: report.summary.lines })}</s-badge>
+              <s-badge tone="warning">{t("import.summary.warnings", { count: report.summary.warnings })}</s-badge>
+              <s-badge tone="critical">{t("import.summary.errors", { count: report.summary.errors })}</s-badge>
+              <s-badge tone="info">{t("import.summary.merged", { count: report.summary.merged })}</s-badge>
             </s-stack>
             <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="end">
               <s-select
-                label="Show"
+                label={t("import.report.show")}
                 value={filter}
                 onChange={(event) => setFilter(event.currentTarget.value as RowStatus | "ALL")}
               >
-                <s-option value="ALL">All rows</s-option>
-                <s-option value="ERROR">Errors</s-option>
-                <s-option value="WARNING">Warnings</s-option>
-                <s-option value="MERGED">Merged</s-option>
-                <s-option value="OK">OK</s-option>
+                <s-option value="ALL">{t("import.report.all")}</s-option>
+                {(["ERROR", "WARNING", "MERGED", "OK"] as const).map((status) => (
+                  <s-option key={status} value={status}>
+                    {t(`import.rowStatus.${status}`)}
+                  </s-option>
+                ))}
               </s-select>
               <s-button
                 variant="tertiary"
                 onClick={() => reportCsv && downloadText(`${imp.fileName.replace(/\.csv$/i, "")}-report.csv`, reportCsv)}
               >
-                Download report (CSV)
+                {t("import.report.download")}
               </s-button>
             </s-grid>
             <s-table variant="auto">
               <s-table-header-row>
-                <s-table-header listSlot="kicker">Row</s-table-header>
-                <s-table-header listSlot="primary">SKU</s-table-header>
-                <s-table-header listSlot="inline">Status</s-table-header>
-                <s-table-header listSlot="labeled">Messages</s-table-header>
-                <s-table-header listSlot="labeled">Detail</s-table-header>
+                <s-table-header listSlot="kicker">{t("import.report.row")}</s-table-header>
+                <s-table-header listSlot="primary">{t("import.report.sku")}</s-table-header>
+                <s-table-header listSlot="inline">{t("import.report.status")}</s-table-header>
+                <s-table-header listSlot="labeled">{t("import.report.messages")}</s-table-header>
+                <s-table-header listSlot="labeled">{t("import.report.detail")}</s-table-header>
               </s-table-header-row>
               <s-table-body>
                 {rows.map((row) => (
@@ -214,9 +201,9 @@ export default function ImportPage() {
                     <s-table-cell>{row.row}</s-table-cell>
                     <s-table-cell>{row.sku || "—"}</s-table-cell>
                     <s-table-cell>
-                      <s-badge tone={STATUS_TONE[row.status]}>{row.status}</s-badge>
+                      <s-badge tone={STATUS_TONE[row.status]}>{t(`import.rowStatus.${row.status}`)}</s-badge>
                     </s-table-cell>
-                    <s-table-cell>{row.codes.join(", ")}</s-table-cell>
+                    <s-table-cell>{row.codes.map((code) => t(`import.codes.${code}`)).join(" · ")}</s-table-cell>
                     <s-table-cell>{row.detail ?? ""}</s-table-cell>
                   </s-table-row>
                 ))}
@@ -226,14 +213,14 @@ export default function ImportPage() {
               <input type="hidden" name="intent" value="commit" />
               <input type="hidden" name="importId" value={imp.id} />
               <s-stack direction="block" gap="base">
-                <s-choice-list label="How to add the lines" name="mode">
+                <s-choice-list label={t("import.commit.mode")} name="mode">
                   <s-choice value="append" defaultSelected>
-                    Add to the existing lines (same product: quantities are added)
+                    {t("import.commit.append")}
                   </s-choice>
-                  <s-choice value="replace">Replace all existing lines</s-choice>
+                  <s-choice value="replace">{t("import.commit.replace")}</s-choice>
                 </s-choice-list>
                 <s-button type="submit" variant="primary" disabled={report.summary.lines === 0 || locked} {...busy}>
-                  Add {report.summary.lines} lines
+                  {t("import.commit.button", { count: report.summary.lines })}
                 </s-button>
               </s-stack>
             </fetcher.Form>

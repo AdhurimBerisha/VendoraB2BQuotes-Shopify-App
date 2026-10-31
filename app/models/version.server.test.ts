@@ -8,7 +8,7 @@ import { decide, saveApprovalRules, submitQuote } from "./approval.server";
 import { DEFAULT_RULES } from "./approval";
 import { redactShop } from "./privacy.server";
 import { createQuote, getQuote } from "./quote.server";
-import { reviseQuote, saveDraftLines } from "./version.server";
+import { diffVersions, reviseQuote, saveDraftLines } from "./version.server";
 
 const VARIANT = "gid://shopify/ProductVariant/1";
 const variants: Record<string, FakeVariant> = { [VARIANT]: { price: "100.00" } };
@@ -198,4 +198,30 @@ test("two submits at once: one wins, one approval row", async () => {
 
 test("only owners change approval rules", async () => {
   await expect(saveApprovalRules(manager(), DEFAULT_RULES)).rejects.toBeInstanceOf(ForbiddenError);
+});
+
+test("diffVersions: added, removed and changed lines; unchanged lines left out", () => {
+  const line = (variantId: string, quantity: number, discountPct: string | null = null) => ({
+    variantId,
+    titleSnapshot: `Title ${variantId}`,
+    quantity,
+    catalogPrice: D(10),
+    overridePrice: null,
+    discountPct: discountPct === null ? null : D(discountPct),
+    lineTotal: D(10 * quantity),
+  });
+  const v1 = { lines: [line("A", 1), line("B", 2), line("C", 3)] };
+  const v2 = { lines: [line("A", 1), line("B", 5, "10"), line("D", 1)] };
+
+  expect(diffVersions(v1, v2)).toEqual([
+    { variantId: "C", title: "Title C", change: "removed", before: { quantity: 3, unitPrice: "10", discountPct: null, lineTotal: "30" } },
+    {
+      variantId: "B",
+      title: "Title B",
+      change: "changed",
+      before: { quantity: 2, unitPrice: "10", discountPct: null, lineTotal: "20" },
+      after: { quantity: 5, unitPrice: "10", discountPct: "10", lineTotal: "50" },
+    },
+    { variantId: "D", title: "Title D", change: "added", after: { quantity: 1, unitPrice: "10", discountPct: null, lineTotal: "10" } },
+  ]);
 });
