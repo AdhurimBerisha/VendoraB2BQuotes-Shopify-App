@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import StatusBadge from "../components/StatusBadge";
 import { formatDate } from "../lib/dates";
+import { downloadFrom } from "../lib/download";
 import { D, formatMoney } from "../lib/money";
 import { getActor } from "../models/actor.server";
 import { can, requirePermission } from "../models/permissions";
@@ -49,18 +50,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-// Embedded pages can't download from a plain link (no session token); App Bridge adds it to fetch.
-const downloadExport = async (search: string) => {
-  const response = await fetch(`/app/quotes/export?${search}`);
-  if (!response.ok) throw new Error(`Export failed (${response.status})`);
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "vendora-quotes.csv";
-  link.click();
-  URL.revokeObjectURL(url);
-};
-
 export default function QuoteList() {
   const { quotes, nextCursor, canCreate, canExport } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
@@ -99,7 +88,7 @@ export default function QuoteList() {
     search.delete("cursor");
     search.delete("prev");
     try {
-      await downloadExport(search.toString());
+      await downloadFrom(`/app/quotes/export?${search.toString()}`, "vendora-quotes.csv");
     } catch (error) {
       console.error("quote export failed", error);
       setExportFailed(true);

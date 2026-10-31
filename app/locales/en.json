@@ -60,6 +60,7 @@
   "quote": {
     "heading": "{{label}} · v{{version}}",
     "rep": "Sales rep: {{name}}",
+    "pdfFailed": "The PDF couldn't be created. Try again.",
     "expiry": {
       "label": "Expires on",
       "help": "At the end of this day in the shop's time zone. Expired quotes can't be paid.",
@@ -80,7 +81,8 @@
       "submit": "Submit",
       "revise": "Revise (new version)",
       "import": "Import CSV",
-      "cancel": "Cancel quote"
+      "cancel": "Cancel quote",
+      "pdf": "Download PDF"
     },
     "cancelModal": {
       "heading": "Cancel this quote?",
@@ -156,6 +158,8 @@
       "title": "Versions",
       "row": "v{{number}} · {{date}} · {{total}}",
       "noChanges": "No line changes from the previous version.",
+      "pdf": "PDF",
+      "pdfFor": "Download the PDF of version {{number}}",
       "added": "Added {{title}} × {{afterQty}} at {{afterPrice}}",
       "removed": "Removed {{title}}",
       "changed": "{{title}}: quantity {{beforeQty}} → {{afterQty}}, price {{beforePrice}} → {{afterPrice}}, discount {{beforeDiscount}} % → {{afterDiscount}} %"
@@ -327,11 +331,34 @@
     }
   },
   "team": { "errors": { "lastOwner": "There must be at least one owner." } },
+  "pdf": {
+    "title": "Quote {{number}}",
+    "version": "Version {{version}}",
+    "issued": "Issued {{date}}",
+    "validUntil": "Valid until {{date}}",
+    "preparedFor": "Prepared for",
+    "shipTo": "Ship to",
+    "billTo": "Bill to",
+    "sku": "SKU",
+    "product": "Product",
+    "qty": "Qty",
+    "unitPrice": "Unit price",
+    "discount": "Discount",
+    "lineTotal": "Total",
+    "listTotal": "List total",
+    "discounts": "Discounts",
+    "totalExclTax": "Total (excl. tax and shipping)",
+    "taxNote": "Taxes and shipping are calculated at checkout.",
+    "notes": "Notes",
+    "terms": "Terms",
+    "page": "Page {{page}} of {{pages}}"
+  },
   "settings": {
     "title": "Settings",
     "errors": {
       "numberTooLow": "The next quote number can't be lower than {{min}}.",
-      "prefix": "Use 1–8 capital letters, digits or dashes."
+      "prefix": "Use 1–8 capital letters, digits or dashes.",
+      "logoUrl": "Use the URL of a file uploaded in Shopify admin → Content → Files (https://cdn.shopify.com/…)."
     },
     "general": {
       "title": "General",
@@ -345,6 +372,17 @@
       "notifyEmails": "Notification emails",
       "notifyEmailsHelp": "Comma-separated. Vendora emails these addresses when a quote needs someone.",
       "save": "Save general settings"
+    },
+    "branding": {
+      "title": "Branding",
+      "help": "Shown on quote PDFs.",
+      "logoUrl": "Logo URL",
+      "logoUrlHelp": "Upload the logo in Shopify admin → Content → Files, then paste its URL here. PNG or JPG.",
+      "terms": "Terms",
+      "termsHelp": "Printed at the end of every quote. Up to 4,000 characters.",
+      "footer": "Footer",
+      "footerHelp": "One line at the bottom of every page, e.g. your company details. Up to 200 characters.",
+      "save": "Save branding"
     },
     "team": {
       "title": "Team",

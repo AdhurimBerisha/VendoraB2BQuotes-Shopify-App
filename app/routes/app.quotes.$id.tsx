@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFetcher, useLoaderData } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -11,6 +11,7 @@ import usePollWhile from "../components/usePollWhile";
 import db from "../db.server";
 import { runAction } from "../lib/action.server";
 import { formatDateTime, localDateString } from "../lib/dates";
+import { downloadFrom } from "../lib/download";
 import { D, type Money, formatMoney } from "../lib/money";
 import { gid, parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
@@ -254,6 +255,23 @@ export default function QuoteDetail() {
     fetcher.submit({ intent, ...fields }, { method: "post" });
   usePollWhile(quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING");
 
+  const [pdfState, setPdfState] = useState<"idle" | "loading" | "failed">("idle");
+  const downloadPdf = useCallback(
+    async (versionNumber?: number) => {
+      setPdfState("loading");
+      try {
+        const query = versionNumber ? `?v=${versionNumber}` : "";
+        const number = versionNumber ?? version?.number ?? 1;
+        await downloadFrom(`/app/quotes/${quote.id}/pdf${query}`, `${quote.label}-v${number}.pdf`);
+        setPdfState("idle");
+      } catch (error) {
+        console.error("quote pdf download failed", error);
+        setPdfState("failed");
+      }
+    },
+    [quote.id, quote.label, version?.number],
+  );
+
   const editable = !!version && !version.locked && perms.edit;
   const canRevise = perms.edit && ["APPROVED", "SENT", "DECLINED", "EXPIRED"].includes(quote.status);
   const canCancel = perms.cancel && !["ORDERED", "CANCELLED"].includes(quote.status);
@@ -278,6 +296,11 @@ export default function QuoteDetail() {
           {t("quote.actions.import")}
         </s-button>
       )}
+      {version && (
+        <s-button slot="secondary-actions" onClick={() => downloadPdf()} {...(pdfState === "loading" ? { loading: true } : {})}>
+          {t("quote.actions.pdf")}
+        </s-button>
+      )}
       {canCancel && (
         <s-button slot="secondary-actions" tone="critical" commandFor="cancel-modal" command="--show">
           {t("quote.actions.cancel")}
@@ -291,6 +314,7 @@ export default function QuoteDetail() {
           {quote.expires && <s-text color="subdued">{t("quote.expires", { date: quote.expires })}</s-text>}
         </s-stack>
         <ErrorBanner result={fetcher.data} />
+        {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}
         <ProblemsBanner data={data} />
         {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
       </s-stack>
@@ -312,7 +336,7 @@ export default function QuoteDetail() {
         <SendSection onSend={(message) => submit("send", { message })} busy={fetcher.state !== "idle"} syncing={quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING"} />
       )}
       <ShopifySection data={data} onRetry={() => submit("retrySync")} busy={fetcher.state !== "idle"} />
-      <VersionsSection versions={data.versions} />
+      <VersionsSection versions={data.versions} onPdf={downloadPdf} />
       <HistorySection history={data.history} />
 
       <s-modal id="cancel-modal" heading={t("quote.cancelModal.heading")}>
@@ -747,17 +771,32 @@ function ShopifySection({ data, onRetry, busy }: { data: LoaderData; onRetry: ()
   );
 }
 
-function VersionsSection({ versions }: { versions: LoaderData["versions"] }) {
+function VersionsSection({
+  versions,
+  onPdf,
+}: {
+  versions: LoaderData["versions"];
+  onPdf: (versionNumber: number) => void;
+}) {
   const { t } = useTranslation();
   return (
     <s-section heading={t("quote.versions.title")}>
       <s-stack direction="block" gap="base">
         {[...versions].reverse().map((item) => (
           <s-stack key={item.number} direction="block" gap="small-200">
-            <s-text type="strong">
-              {t("quote.versions.row", { number: item.number, date: item.created, total: item.total })}
-              {item.author ? ` · ${item.author}` : ""}
-            </s-text>
+            <s-stack direction="inline" gap="base" alignItems="center">
+              <s-text type="strong">
+                {t("quote.versions.row", { number: item.number, date: item.created, total: item.total })}
+                {item.author ? ` · ${item.author}` : ""}
+              </s-text>
+              <s-button
+                variant="tertiary"
+                accessibilityLabel={t("quote.versions.pdfFor", { number: item.number })}
+                onClick={() => onPdf(item.number)}
+              >
+                {t("quote.versions.pdf")}
+              </s-button>
+            </s-stack>
             {item.number > 1 &&
               (item.changes.length === 0 ? (
                 <s-text color="subdued">{t("quote.versions.noChanges")}</s-text>

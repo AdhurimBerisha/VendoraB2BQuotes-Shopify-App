@@ -8,6 +8,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import usePollWhile from "../components/usePollWhile";
 import db from "../db.server";
 import { runAction } from "../lib/action.server";
+import { downloadText } from "../lib/download";
 import { NotFoundError, UserError } from "../lib/errors";
 import { parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
@@ -64,17 +65,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     await commitImport(actor, importId, mode);
     return { importId, committed: true };
   });
-};
-
-// Browser download of text we already have (embedded pages can't download from an
-// authenticated URL with a plain link).
-const downloadText = (fileName: string, text: string) => {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
 };
 
 const STATUS_TONE: Record<RowStatus, "success" | "warning" | "critical" | "info"> = {
@@ -141,7 +131,7 @@ export default function ImportPage() {
               <s-button variant="primary" onClick={upload} {...busy}>
                 {t("import.upload.check")}
               </s-button>
-              <s-button variant="tertiary" onClick={() => downloadText("vendora-import-template.csv", TEMPLATE_CSV)}>
+              <s-button variant="tertiary" onClick={() => downloadText(TEMPLATE_CSV, "vendora-import-template.csv")}>
                 {t("import.upload.template")}
               </s-button>
             </s-stack>
@@ -182,7 +172,7 @@ export default function ImportPage() {
               </s-select>
               <s-button
                 variant="tertiary"
-                onClick={() => reportCsv && downloadText(`${imp.fileName.replace(/\.csv$/i, "")}-report.csv`, reportCsv)}
+                onClick={() => reportCsv && downloadText(reportCsv, `${imp.fileName.replace(/\.csv$/i, "")}-report.csv`)}
               >
                 {t("import.report.download")}
               </s-button>

@@ -10,11 +10,11 @@ import { getActor } from "../models/actor.server";
 import { type ApprovalRules, parseRules, rulesFromForm } from "../models/approval";
 import { saveApprovalRules } from "../models/approval.server";
 import { ROLES, requirePermission } from "../models/permissions";
-import { generalSettingsFromForm, getShop, saveGeneralSettings } from "../models/shop.server";
+import { brandingFromForm, generalSettingsFromForm, getShop, saveBranding, saveGeneralSettings } from "../models/shop.server";
 import { listStaff, setRole } from "../models/staff.server";
 
-// Settings: General, Team and Approval rules. Branding (M3.1) and notifications (M3.3) add their own
-// sections and intents.
+// Settings: General, Branding, Team and Approval rules. Notifications (M3.3) add their own
+// section and intent.
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
@@ -28,6 +28,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       defaultExpiryDays: shop?.defaultExpiryDays ?? 30,
       reserveInventory: shop?.reserveInventory ?? false,
       notifyEmails: shop?.notifyEmails.join(", ") ?? "",
+    },
+    branding: {
+      logoUrl: shop?.logoUrl ?? "",
+      quoteTerms: shop?.quoteTerms ?? "",
+      quoteFooter: shop?.quoteFooter ?? "",
     },
     rules: parseRules(shop?.approvalRules),
     staff: staff.map((member) => ({
@@ -55,6 +60,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       await saveGeneralSettings(actor, generalSettingsFromForm(form));
       return null;
     }
+    if (intent === "saveBranding") {
+      await saveBranding(actor, brandingFromForm(form));
+      return null;
+    }
     if (intent === "saveApprovalRules") {
       await saveApprovalRules(actor, rulesFromForm(form));
       return null;
@@ -68,12 +77,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Settings() {
-  const { general, staff, rules } = useLoaderData<typeof loader>();
+  const { general, branding, staff, rules } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
 
   return (
     <s-page heading={t("settings.title")}>
       <GeneralSection general={general} />
+      <BrandingSection branding={branding} />
       <s-section heading={t("settings.team.title")}>
         <s-paragraph>{t("settings.team.help")}</s-paragraph>
         <s-table>
@@ -146,6 +156,46 @@ function GeneralSection({ general }: { general: LoaderData["general"] }) {
           ></s-text-field>
           <s-button type="submit" variant="primary" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
             {t("settings.general.save")}
+          </s-button>
+          <ErrorBanner result={fetcher.data} />
+        </s-stack>
+      </fetcher.Form>
+    </s-section>
+  );
+}
+
+function BrandingSection({ branding }: { branding: LoaderData["branding"] }) {
+  const fetcher = useFetcher<typeof action>();
+  const { t } = useTranslation();
+  return (
+    <s-section heading={t("settings.branding.title")}>
+      <fetcher.Form method="post">
+        <input type="hidden" name="intent" value="saveBranding" />
+        <s-stack direction="block" gap="base">
+          <s-paragraph>{t("settings.branding.help")}</s-paragraph>
+          <s-url-field
+            label={t("settings.branding.logoUrl")}
+            details={t("settings.branding.logoUrlHelp")}
+            name="logoUrl"
+            value={branding.logoUrl}
+          ></s-url-field>
+          <s-text-area
+            label={t("settings.branding.terms")}
+            details={t("settings.branding.termsHelp")}
+            name="quoteTerms"
+            value={branding.quoteTerms}
+            rows={6}
+            maxLength={4000}
+          ></s-text-area>
+          <s-text-field
+            label={t("settings.branding.footer")}
+            details={t("settings.branding.footerHelp")}
+            name="quoteFooter"
+            value={branding.quoteFooter}
+            maxLength={200}
+          ></s-text-field>
+          <s-button type="submit" variant="primary" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+            {t("settings.branding.save")}
           </s-button>
           <ErrorBanner result={fetcher.data} />
         </s-stack>

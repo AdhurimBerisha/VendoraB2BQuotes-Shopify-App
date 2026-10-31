@@ -75,12 +75,61 @@ const saveGeneralSettings = async (actor: StaffActor, settings: GeneralSettings)
   console.log("general settings saved", { shop: actor.shop });
 };
 
+// The server fetches the logo when rendering a PDF, so only Shopify's file CDN is allowed:
+// any other host could point the fetch at internal addresses (SSRF).
+const isAllowedLogoUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname.toLowerCase() === "cdn.shopify.com" && !url.username && !url.port;
+  } catch {
+    return false;
+  }
+};
+
+// Settings → Branding, shown on PDFs. Empty fields clear the value.
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((value) => value || null);
+const brandingSchema = z.object({
+  logoUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .refine((value) => value === "" || isAllowedLogoUrl(value), "settings.errors.logoUrl")
+    .transform((value) => value || null),
+  quoteTerms: optionalText(4000),
+  quoteFooter: optionalText(200),
+});
+type Branding = z.infer<typeof brandingSchema>;
+
+const brandingFromForm = (form: FormData): Branding =>
+  brandingSchema.parse({
+    logoUrl: String(form.get("logoUrl") ?? ""),
+    quoteTerms: String(form.get("quoteTerms") ?? ""),
+    quoteFooter: String(form.get("quoteFooter") ?? ""),
+  });
+
+const saveBranding = async (actor: StaffActor, branding: Branding) => {
+  requirePermission(actor, "settings.manage");
+  await db.$transaction(async (tx) => {
+    await tx.shop.update({ where: { id: actor.shop }, data: branding });
+    await audit(tx, actor, null, "settings.branding_changed", { logo: !!branding.logoUrl });
+  });
+  console.log("branding saved", { shop: actor.shop });
+};
+
 export {
+  brandingFromForm,
   generalSettingsFromForm,
   getShop,
+  isAllowedLogoUrl,
   isInstalled,
   markUninstalled,
+  saveBranding,
   saveGeneralSettings,
   upsertShopOnInstall,
 };
-export type { GeneralSettings };
+export type { Branding, GeneralSettings };

@@ -91,7 +91,8 @@ const fakeShopify = ({
 
   const graphql = async (
     query: string,
-    { variables }: { variables: any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+    // Optional like the real client: queries without variables pass no second argument.
+    { variables }: { variables: any } = { variables: {} }, // eslint-disable-line @typescript-eslint/no-explicit-any
   ) => {
     if (query.includes("VendoraDraftOrderCreate")) {
       calls.create++;
@@ -162,6 +163,11 @@ const fakeShopify = ({
       if (crashAfterInvoice) throw new Error("socket hang up");
       return Response.json({
         data: { draftOrderInvoiceSend: { draftOrder: { id: draft.id, invoiceSentAt: draft.invoiceSentAt }, userErrors: [] } },
+      });
+    }
+    if (query.includes("VendoraShopInfo")) {
+      return Response.json({
+        data: { shop: { id: "gid://shopify/Shop/1", name: "Fake Shop", ianaTimezone: "UTC", currencyCode: "USD" } },
       });
     }
     if (query.includes("VendoraContact")) {

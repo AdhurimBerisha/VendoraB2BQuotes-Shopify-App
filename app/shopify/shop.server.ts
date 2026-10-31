@@ -4,7 +4,7 @@ const fetchShopInfo = async (admin: AdminApiContext) => {
   const response = await admin.graphql(
     `#graphql
     query VendoraShopInfo {
-      shop { id ianaTimezone currencyCode }
+      shop { id name ianaTimezone currencyCode }
     }`,
   );
   const { data } = await response.json();
