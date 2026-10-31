@@ -1,20 +1,25 @@
 import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 import db from "../db.server";
+import { addDaysEndOfDay, endOfLocalDay } from "../lib/dates";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
-import { getCompanyLocation } from "../shopify/companies.server";
-import type { StaffActor } from "./actor";
+import { enqueue, getBoss } from "../jobs/queue.server";
+import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
+import type { StaffActor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
-import { requirePermission } from "./permissions";
+import { requireCancel, requirePermission } from "./permissions";
 
-type QuoteStatus =
-  | "DRAFT"
-  | "PENDING_APPROVAL"
-  | "APPROVED"
-  | "SENT"
-  | "ORDERED"
-  | "DECLINED"
-  | "EXPIRED"
-  | "CANCELLED";
+const QUOTE_STATUSES = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "SENT",
+  "ORDERED",
+  "DECLINED",
+  "EXPIRED",
+  "CANCELLED",
+] as const;
+type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 
 // Which statuses each action may start from.
 const TRANSITIONS = {
@@ -23,7 +28,7 @@ const TRANSITIONS = {
   reject: ["PENDING_APPROVAL"],
   send: ["APPROVED"],
   revise: ["APPROVED", "SENT", "DECLINED", "EXPIRED"],
-  order: ["SENT"],
+  order: ["APPROVED", "SENT"], // a merchant may complete the draft order in Shopify before sending
   decline: ["SENT"],
   expire: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"],
   cancel: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "DECLINED", "EXPIRED"],
@@ -72,7 +77,7 @@ const createQuote = async (actor: StaffActor, input: { locationId: string }) => 
         contactCustomerId: contact.customer?.id ?? null,
         currencyCode: location.currency,
         assignedToUserId: actor.userId,
-        expiresAt: new Date(Date.now() + shop.defaultExpiryDays * 86_400_000), // end of day in shop tz: M2.9
+        expiresAt: addDaysEndOfDay(new Date(), shop.defaultExpiryDays, shop.timezone),
       },
     });
     const firstVersion = await tx.quoteVersion.create({
@@ -97,19 +102,45 @@ const getQuote = async (shop: string, id: string) => {
   return quote;
 };
 
+type QuoteFilters = {
+  status?: QuoteStatus;
+  companyId?: string;
+  companyIds?: string[]; // from a company-name search
+  number?: number;
+};
+
+// Shared by the list and the CSV export.
+const quoteWhere = (shop: string, filters: QuoteFilters): Prisma.QuoteWhereInput => ({
+  shop,
+  status: filters.status,
+  number: filters.number,
+  companyId: filters.companyIds ? { in: filters.companyIds } : filters.companyId,
+});
+
+// The quote list's URL parameters (list page and CSV export): bad values are ignored.
+const listFiltersSchema = z.object({
+  status: z.enum(QUOTE_STATUSES).optional().catch(undefined),
+  q: z.string().trim().max(100).optional().catch(undefined),
+  cursor: z.string().max(40).optional().catch(undefined),
+});
+
+// Search text → filters: "1042" or "Q-1042" is a quote number, anything else a company name.
+const searchFilters = async (actor: StaffActor, q: string | undefined, prefix: string): Promise<QuoteFilters> => {
+  const text = q?.trim();
+  if (!text) return {};
+  const digits = text.toUpperCase().startsWith(prefix.toUpperCase()) ? text.slice(prefix.length) : text;
+  if (/^\d+$/.test(digits)) return { number: Number(digits) };
+  const companies = await searchCompanies(actor.admin, text);
+  return { companyIds: companies.nodes.map((company) => company.id) };
+};
+
 const listQuotes = async (
   shop: string,
-  filters: {
-    status?: QuoteStatus;
-    companyId?: string;
-    number?: number;
-    cursor?: string;
-    take?: number;
-  } = {},
+  filters: QuoteFilters & { cursor?: string; take?: number } = {},
 ) => {
   const take = Math.min(filters.take ?? 25, 100);
   const rows = await db.quote.findMany({
-    where: { shop, status: filters.status, companyId: filters.companyId, number: filters.number },
+    where: quoteWhere(shop, filters),
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: take + 1,
     ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
@@ -121,7 +152,82 @@ const listQuotes = async (
   };
 };
 
+// → CANCELLED; its draft order (if any) is deleted in Shopify by the sync job.
+const cancelQuote = async (actor: StaffActor, quoteId: string, reason?: string) => {
+  const quote = await getQuote(actor.shop, quoteId);
+  requireCancel(actor, quote);
+  await getBoss(); // start pg-boss outside the transaction (see enqueue)
+  await db.$transaction(async (tx) => {
+    await transition(tx, actor.shop, quoteId, "cancel", "CANCELLED");
+    await audit(tx, actor, quoteId, "quote.cancelled", { reason: reason ?? null });
+    if (!quote.draftOrderId) return;
+    // QUEUED so runSync can claim it.
+    await tx.quote.update({ where: { id: quoteId }, data: { syncStatus: "QUEUED", syncError: null } });
+    await enqueue(
+      "sync-draft-order",
+      { shop: actor.shop, quoteId, op: "delete" },
+      { singletonKey: `${quoteId}:delete`, tx },
+    );
+  });
+  console.log("quote cancelled", { shop: actor.shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+};
+
+const OPEN: QuoteStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
+
+// New expiry: the end of a shop-local day ("YYYY-MM-DD"), while the quote is still open.
+// ponytail: a SENT quote's draft order keeps its old reserveInventoryUntil until the next sync;
+// re-sync here if merchants use reserved stock with changed expiries.
+const setExpiry = async (actor: StaffActor, quoteId: string, localDate: string) => {
+  requirePermission(actor, "quote.edit");
+  const shop = await db.shop.findUniqueOrThrow({ where: { id: actor.shop } });
+  const expiresAt = endOfLocalDay(localDate, shop.timezone);
+  if (!expiresAt) throw new UserError("quote.errors.invalidDate");
+  if (expiresAt < new Date()) throw new UserError("quote.errors.expiryInPast");
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.quote.updateMany({
+      where: { id: quoteId, shop: actor.shop, status: { in: OPEN } },
+      data: { expiresAt },
+    });
+    if (count !== 1) throw new ConflictError("quote.errors.invalidTransition", { action: "expire" });
+    await audit(tx, actor, quoteId, "quote.expiry_changed", { localDate });
+  });
+  console.log("quote expiry changed", { shop: actor.shop, quoteId, expiresAt: expiresAt.toISOString() });
+};
+
+// Past its expiry → EXPIRED; its draft order is deleted so the invoice link stops working.
+// Returns false when there was nothing to do (not due, already closed).
+const expireQuote = async (shop: string, quoteId: string, now = new Date()) => {
+  const system: SystemActor = { type: "SYSTEM", shop, reason: "expiry" };
+  const quote = await db.quote.findFirst({ where: { id: quoteId, shop } });
+  if (!quote?.expiresAt || quote.expiresAt > now || !OPEN.includes(quote.status as QuoteStatus)) return false;
+  if (quote.draftOrderId) await getBoss(); // start pg-boss outside the transaction (see enqueue)
+  await db.$transaction(async (tx) => {
+    await transition(tx, shop, quoteId, "expire", "EXPIRED");
+    await audit(tx, system, quoteId, "quote.expired", { expiresAt: quote.expiresAt?.toISOString() ?? null });
+    if (!quote.draftOrderId) return;
+    await tx.quote.update({ where: { id: quoteId }, data: { syncStatus: "QUEUED", syncError: null } });
+    await enqueue("sync-draft-order", { shop, quoteId, op: "delete" }, { singletonKey: `${quoteId}:delete`, tx });
+  });
+  // M3.3: email the assigned rep "quote expired".
+  console.log("quote expired", { shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+  return true;
+};
+
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
-export { TRANSITIONS, createQuote, getQuote, listQuotes, quoteLabel, transition };
-export type { QuoteAction, QuoteStatus };
+export {
+  QUOTE_STATUSES,
+  TRANSITIONS,
+  cancelQuote,
+  createQuote,
+  expireQuote,
+  getQuote,
+  listFiltersSchema,
+  listQuotes,
+  quoteLabel,
+  quoteWhere,
+  searchFilters,
+  setExpiry,
+  transition,
+};
+export type { QuoteAction, QuoteFilters, QuoteStatus };

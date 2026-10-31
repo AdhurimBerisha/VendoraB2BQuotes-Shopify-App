@@ -9,6 +9,8 @@ const getCompanyLocation = async (admin: AdminApiContext, id: string) => {
         companyLocation(id: $id) {
           id name currency
           company { id name mainContact { id customer { id } } }
+          shippingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
+          billingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
         }
       }`,
       { variables: { id } },
@@ -36,4 +38,38 @@ const searchCompanies = async (admin: AdminApiContext, query?: string, after?: s
   return data.companies;
 };
 
-export { getCompanyLocation, searchCompanies };
+const getContact = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraContact($id: ID!) {
+        companyContact(id: $id) { id customer { id displayName defaultEmailAddress { emailAddress } } }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.companyContact ?? null;
+};
+
+// Company names for a page of quotes, in one call. Deleted companies are missing from the map.
+const companyNames = async (admin: AdminApiContext, ids: string[]) => {
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraCompanyNames($ids: [ID!]!) {
+        nodes(ids: $ids) { ... on Company { id name } }
+      }`,
+      { variables: { ids } },
+    ),
+  );
+  const { data } = await response.json();
+  for (const node of data?.nodes ?? []) {
+    if (node && "name" in node) names.set(node.id, node.name);
+  }
+  return names;
+};
+
+export { companyNames, getCompanyLocation, getContact, searchCompanies };

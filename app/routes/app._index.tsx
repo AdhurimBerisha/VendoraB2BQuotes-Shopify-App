@@ -1,317 +1,165 @@
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useEffect } from "react";
-import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
+import { useTranslation } from "react-i18next";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { z } from "zod";
-import { authenticate } from "../shopify.server";
-import { runAction, type ActionResult } from "../lib/action.server";
-import { D, formatMoney } from "../lib/money";
-import { gid, parseForm, quantity } from "../lib/validation";
+import { Prisma } from "@prisma/client";
+import StatusBadge from "../components/StatusBadge";
+import db from "../db.server";
+import { formatDate, startOfMonthInTz } from "../lib/dates";
 import { getActor } from "../models/actor.server";
-import { decide, submitQuote } from "../models/approval.server";
-import { createQuote, listQuotes, quoteLabel } from "../models/quote.server";
+import { attentionItems } from "../models/attention";
+import { can, requirePermission } from "../models/permissions";
+import { quoteLabel } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
-import { requestSync } from "../models/sync.server";
-import { reviseQuote, saveDraftLines } from "../models/version.server";
-import { searchCompanies } from "../shopify/companies.server";
+
+const EXPIRING_DAYS = 3;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const actor = await getActor(request);
+  requirePermission(actor, "quote.view");
+  const shop = await getShop(actor.shop);
+  const prefix = shop?.quotePrefix ?? "Q-";
+  const timezone = shop?.timezone ?? "UTC";
+  const monthStart = startOfMonthInTz(new Date(), timezone);
+  const where = { shop: actor.shop };
 
-  const shopResponse = await admin.graphql(
-    `#graphql
-    query VendoraQuoteShopAndVariants {
-      shop { plan { shopifyPlus partnerDevelopment } }
-      productVariants(first: 50) {
-        nodes { id title product { title } }
-      }
-    }`,
-  );
-  const { data: shopData } = await shopResponse.json();
-
-  let companies: Awaited<ReturnType<typeof searchCompanies>>["nodes"] = [];
-  let b2bError: string | null = null;
-  try {
-    companies = (await searchCompanies(admin)).nodes;
-  } catch (error) {
-    if (error instanceof Response) throw error; // let re-auth redirects through
-    b2bError = error instanceof Error ? error.message : String(error);
-  }
-
-  const prefix = (await getShop(session.shop))?.quotePrefix ?? "Q-";
-  const { quotes } = await listQuotes(session.shop);
+  const [byStatus, attention, pending, expiring, orderedThisMonth, sentThisMonth] = await Promise.all([
+    db.quote.groupBy({ by: ["status"], where, _count: true }),
+    db.quote.findMany({
+      where: {
+        ...where,
+        OR: [{ syncStatus: { in: ["FAILED", "NEEDS_ATTENTION"] } }, { attention: { not: Prisma.DbNull } }],
+      },
+      select: { id: true, number: true, attention: true },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+    }),
+    can(actor, "quote.approve")
+      ? db.quote.findMany({
+          where: { ...where, status: "PENDING_APPROVAL" },
+          select: { id: true, number: true, status: true },
+          orderBy: { updatedAt: "asc" },
+          take: 10,
+        })
+      : Promise.resolve([]),
+    db.quote.findMany({
+      where: {
+        ...where,
+        status: { in: ["APPROVED", "SENT"] },
+        expiresAt: { lte: new Date(Date.now() + EXPIRING_DAYS * 86_400_000) },
+      },
+      select: { id: true, number: true, status: true, expiresAt: true },
+      orderBy: { expiresAt: "asc" },
+      take: 10,
+    }),
+    db.quote.count({ where: { ...where, status: "ORDERED", updatedAt: { gte: monthStart } } }),
+    db.auditEvent.count({ where: { ...where, action: "quote.sent", createdAt: { gte: monthStart } } }),
+  ]);
+  const count = (status: string) => byStatus.find((row) => row.status === status)?._count ?? 0;
 
   return {
-    plan: shopData?.shop.plan ?? null,
-    variants: shopData?.productVariants.nodes ?? [],
-    companies,
-    b2bError,
-    quotes: quotes.map((quote) => ({
+    metrics: {
+      drafts: count("DRAFT"),
+      pending: count("PENDING_APPROVAL"),
+      sent: sentThisMonth,
+      ordered: orderedThisMonth,
+      conversion: sentThisMonth ? Math.round((orderedThisMonth / sentThisMonth) * 100) : null,
+    },
+    attention: attention.map((quote) => ({
+      id: quote.id,
+      label: quoteLabel(prefix, quote.number),
+      items: attentionItems(quote.attention).map((item) => ({ code: item.code, message: item.message ?? "" })),
+    })),
+    pending: pending.map((quote) => ({ id: quote.id, label: quoteLabel(prefix, quote.number), status: quote.status })),
+    expiring: expiring.map((quote) => ({
       id: quote.id,
       label: quoteLabel(prefix, quote.number),
       status: quote.status,
-      syncStatus: quote.syncStatus,
-      syncError: quote.syncError,
-      draftOrderId: quote.draftOrderId,
-      total: formatMoney(quote.currentVersion?.total ?? D(0), quote.currencyCode),
+      expires: quote.expiresAt ? formatDate(quote.expiresAt, actor.locale, timezone) : "",
     })),
+    canCreate: can(actor, "quote.create"),
   };
 };
 
-const createSchema = z.object({
-  intent: z.literal("create"),
-  locationId: gid("CompanyLocation"),
-  variantId: gid("ProductVariant"),
-  quantity,
-});
-const syncSchema = z.object({ intent: z.literal("sync"), quoteId: z.string().min(1) });
-const flowSchema = z.object({
-  intent: z.enum(["submit", "approve", "reject", "revise"]),
-  quoteId: z.string().min(1),
-  comment: z.string().max(2000).optional(),
-});
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const actor = await getActor(request);
-  const form = await request.formData();
-
-  return runAction(async () => {
-    const intent = form.get("intent");
-    if (intent === "sync") {
-      await requestSync(actor, parseForm(form, syncSchema).quoteId);
-      return null;
-    }
-    if (intent !== "create") {
-      const { quoteId, comment } = parseForm(form, flowSchema);
-      if (intent === "submit") await submitQuote(actor, quoteId);
-      if (intent === "approve") await decide(actor, quoteId, "APPROVED", comment);
-      if (intent === "reject") await decide(actor, quoteId, "REJECTED", comment);
-      if (intent === "revise") await reviseQuote(actor, quoteId);
-      return null;
-    }
-    const input = parseForm(form, createSchema);
-    const quote = await createQuote(actor, { locationId: input.locationId });
-    // A new quote's lockVersion is 0. The line editor itself arrives with the admin UI (M2.8).
-    await saveDraftLines(
-      actor,
-      quote.id,
-      0,
-      [{ variantId: input.variantId, quantity: input.quantity }],
-      null,
-    );
-    return null;
-  });
-};
-
-// ponytail: shows raw translation keys until app/locales arrives in M2.8.
-const errorText = (result: ActionResult<unknown> | undefined) => {
-  if (!result || result.ok) return null;
-  const params = Object.entries(result.error.params).map(([k, v]) => `${k}: ${v}`);
-  return [result.error.key, ...params].join(" · ");
-};
-
-export default function Index() {
-  const { plan, variants, companies, b2bError, quotes } =
-    useLoaderData<typeof loader>();
-  const createFetcher = useFetcher<typeof action>();
-  const revalidator = useRevalidator();
-  const createError = errorText(createFetcher.data);
-
-  // Refresh every 3 s while a background sync is running.
-  const inFlight = quotes.some(
-    (quote) => quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING",
+export default function Dashboard() {
+  const { metrics, attention, pending, expiring, canCreate } = useLoaderData<typeof loader>();
+  const { t } = useTranslation();
+  const metric = (label: string, value: string | number) => (
+    <s-box padding="base" border="base" borderRadius="base">
+      <s-stack direction="block" gap="small-200">
+        <s-text color="subdued">{label}</s-text>
+        <s-heading>{value}</s-heading>
+      </s-stack>
+    </s-box>
   );
-  useEffect(() => {
-    if (!inFlight) return;
-    const timer = setInterval(() => {
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [inFlight, revalidator]);
 
   return (
-    <s-page heading="Quotes">
-      <s-section heading="Store eligibility">
-        <s-stack direction="inline" gap="base">
-          <s-badge tone={plan?.shopifyPlus ? "success" : "warning"}>
-            Plus: {plan?.shopifyPlus ? "yes" : "no"}
-          </s-badge>
-          <s-badge>
-            Dev store: {plan?.partnerDevelopment ? "yes" : "no"}
-          </s-badge>
-        </s-stack>
-        {b2bError && (
-          <s-banner tone="critical" heading="B2B isn't available on this store">
-            Needs a Plus plan or a Plus dev store, plus protected customer data
-            access. Shopify said: {b2bError}
-          </s-banner>
+    <s-page heading={t("dashboard.title")}>
+      {canCreate && (
+        <s-button slot="primary-action" variant="primary" href="/app/quotes/new">
+          {t("quotes.new")}
+        </s-button>
+      )}
+      <s-section>
+        <s-grid gridTemplateColumns="repeat(4, 1fr)" gap="base">
+          {metric(t("dashboard.metrics.drafts"), metrics.drafts)}
+          {metric(t("dashboard.metrics.pending"), metrics.pending)}
+          {metric(t("dashboard.metrics.sent"), metrics.sent)}
+          {metric(
+            t("dashboard.metrics.ordered"),
+            metrics.conversion === null
+              ? metrics.ordered
+              : t("dashboard.metrics.orderedWithRate", { count: metrics.ordered, rate: metrics.conversion }),
+          )}
+        </s-grid>
+      </s-section>
+
+      <s-section heading={t("dashboard.attention")}>
+        {attention.length === 0 ? (
+          <s-paragraph>{t("dashboard.allClear")}</s-paragraph>
+        ) : (
+          <s-unordered-list>
+            {attention.map((quote) => (
+              <s-list-item key={quote.id}>
+                <s-link href={`/app/quotes/${quote.id}`}>{quote.label}</s-link>
+                {": "}
+                {quote.items.length
+                  ? quote.items.map((item) => t(`attention.${item.code}`, { message: item.message })).join(" · ")
+                  : t("dashboard.syncProblem")}
+              </s-list-item>
+            ))}
+          </s-unordered-list>
         )}
       </s-section>
 
-      <s-section heading="New quote">
-        <createFetcher.Form method="post">
-          <input type="hidden" name="intent" value="create" />
-          <s-stack direction="block" gap="base">
-            <s-select label="Company location" name="locationId">
-              {companies.flatMap((company) =>
-                company.locations.nodes.map((location) => (
-                  <s-option key={location.id} value={location.id}>
-                    {company.name} — {location.name} ({location.currency})
-                    {company.mainContact ? "" : " (no main contact)"}
-                  </s-option>
-                )),
-              )}
-            </s-select>
-            <s-select label="Variant" name="variantId">
-              {variants.map((variant) => (
-                <s-option key={variant.id} value={variant.id}>
-                  {variant.product.title} — {variant.title}
-                </s-option>
-              ))}
-            </s-select>
-            <s-number-field
-              label="Quantity"
-              name="quantity"
-              value="1"
-              min={1}
-              max={100000}
-              step={1}
-            ></s-number-field>
-            <s-button
-              type="submit"
-              variant="primary"
-              {...(createFetcher.state !== "idle" ? { loading: true } : {})}
-            >
-              Create quote
-            </s-button>
-            {createError && <s-banner tone="critical">{createError}</s-banner>}
-          </s-stack>
-        </createFetcher.Form>
-      </s-section>
-
-      <s-section heading="Quotes">
-        {quotes.length === 0 ? (
-          <s-paragraph>No quotes yet.</s-paragraph>
-        ) : (
-          <s-stack direction="block" gap="base">
-            {quotes.map((quote) => (
-              <QuoteRow key={quote.id} quote={quote} />
+      {pending.length > 0 && (
+        <s-section heading={t("dashboard.pending")}>
+          <s-unordered-list>
+            {pending.map((quote) => (
+              <s-list-item key={quote.id}>
+                <s-link href={`/app/quotes/${quote.id}`}>{quote.label}</s-link> <StatusBadge status={quote.status} />
+              </s-list-item>
             ))}
-          </s-stack>
+          </s-unordered-list>
+        </s-section>
+      )}
+
+      <s-section heading={t("dashboard.expiring")}>
+        {expiring.length === 0 ? (
+          <s-paragraph>{t("dashboard.nothingExpiring")}</s-paragraph>
+        ) : (
+          <s-unordered-list>
+            {expiring.map((quote) => (
+              <s-list-item key={quote.id}>
+                <s-link href={`/app/quotes/${quote.id}`}>{quote.label}</s-link>{" "}
+                {t("dashboard.expiresOn", { date: quote.expires })} <StatusBadge status={quote.status} />
+              </s-list-item>
+            ))}
+          </s-unordered-list>
         )}
       </s-section>
     </s-page>
   );
 }
 
-const SYNC_LABELS: Record<string, string> = {
-  QUEUED: "Waiting to sync",
-  SYNCING: "Syncing…",
-  SYNCED: "Draft order created",
-  FAILED: "Sync failed",
-};
-
-function QuoteRow({
-  quote,
-}: {
-  quote: {
-    id: string;
-    label: string;
-    status: string;
-    syncStatus: string;
-    syncError: string | null;
-    draftOrderId: string | null;
-    total: string;
-  };
-}) {
-  const fetcher = useFetcher<typeof action>();
-  const error = errorText(fetcher.data) ?? quote.syncError;
-  const canSync = quote.syncStatus === "NONE" || quote.syncStatus === "FAILED";
-
-  return (
-    <s-box padding="base" border="base" borderRadius="base">
-      <s-stack direction="block" gap="small-200">
-        <s-stack direction="inline" gap="base" alignItems="center">
-          <s-text type="strong">{quote.label}</s-text>
-          <s-badge>{quote.status}</s-badge>
-          <s-text>{quote.total}</s-text>
-          {quote.syncStatus !== "NONE" && (
-            <s-badge tone={quote.syncStatus === "SYNCED" ? "success" : "auto"}>
-              {SYNC_LABELS[quote.syncStatus] ?? quote.syncStatus}
-            </s-badge>
-          )}
-          {quote.draftOrderId && (
-            <s-link
-              href={`shopify://admin/draft_orders/${quote.draftOrderId.split("/").pop()}`}
-              target="_top"
-            >
-              Open draft order
-            </s-link>
-          )}
-          {!quote.draftOrderId && canSync && (
-            <fetcher.Form method="post">
-              <input type="hidden" name="intent" value="sync" />
-              <input type="hidden" name="quoteId" value={quote.id} />
-              <s-button
-                type="submit"
-                {...(fetcher.state !== "idle" ? { loading: true } : {})}
-              >
-                Convert to draft order
-              </s-button>
-            </fetcher.Form>
-          )}
-        </s-stack>
-        <QuoteFlow quoteId={quote.id} status={quote.status} />
-        {error && <s-text tone="critical">{error}</s-text>}
-      </s-stack>
-    </s-box>
-  );
-}
-
-// ponytail: bare approval buttons so the flow can be tried; the quote page (M2.8) replaces them.
-function QuoteFlow({ quoteId, status }: { quoteId: string; status: string }) {
-  const fetcher = useFetcher<typeof action>();
-  const error = errorText(fetcher.data);
-  const busy = fetcher.state !== "idle" ? { loading: true } : {};
-  const button = (intent: string, label: string) => (
-    <fetcher.Form method="post">
-      <input type="hidden" name="intent" value={intent} />
-      <input type="hidden" name="quoteId" value={quoteId} />
-      <s-button type="submit" {...busy}>
-        {label}
-      </s-button>
-    </fetcher.Form>
-  );
-
-  return (
-    <s-stack direction="block" gap="small-200">
-      {status === "DRAFT" && button("submit", "Submit")}
-      {status === "PENDING_APPROVAL" && (
-        <s-stack direction="block" gap="small-200">
-          {button("approve", "Approve")}
-          <fetcher.Form method="post">
-            <input type="hidden" name="intent" value="reject" />
-            <input type="hidden" name="quoteId" value={quoteId} />
-            <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
-              <s-text-field label="Reason for rejecting" name="comment"></s-text-field>
-              <s-button type="submit" tone="critical" {...busy}>
-                Reject
-              </s-button>
-            </s-grid>
-          </fetcher.Form>
-        </s-stack>
-      )}
-      {["APPROVED", "SENT", "DECLINED", "EXPIRED"].includes(status) &&
-        button("revise", "Revise (new version)")}
-      {error && <s-text tone="critical">{error}</s-text>}
-    </s-stack>
-  );
-}
-
-export const headers: HeadersFunction = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
+export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);

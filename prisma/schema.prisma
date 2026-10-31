@@ -49,11 +49,12 @@ model Quote {
   assignedToUserId     BigInt?
   expiresAt            DateTime?
   draftOrderId         String?
-  syncStatus           String         @default("NONE") // NONE | QUEUED | SYNCING | SYNCED | FAILED
+  syncStatus           String         @default("NONE") // NONE | QUEUED | SYNCING | SYNCED | FAILED | NEEDS_ATTENTION
   syncError            String?
   syncClaimedAt        DateTime?
   syncedVersionId      String?
   invoiceSentVersionId String?
+  invoiceRequestedAt   DateTime? // when we last asked Shopify to send the invoice (dedupe + verify)
   shopifyUpdatedAt     DateTime?
   orderId              String?
   attention            Json?
@@ -154,6 +155,7 @@ model Shop {
   notifyEmails      String[]  @default([])
   logoUrl           String?
   quoteTerms        String?
+  quoteFooter       String? // PDF footer line (M3.1)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 }
@@ -183,6 +185,23 @@ model WebhookEvent {
   error       String?
 
   @@index([shop, receivedAt])
+}
+
+// One CSV upload into a quote's draft version: validated, previewed, then committed (M2.7).
+model Import {
+  id        String   @id @default(cuid())
+  shop      String
+  quoteId   String
+  status    String // VALIDATING | READY | COMMITTED | FAILED
+  fileName  String
+  rowCount  Int      @default(0)
+  lines     Json? // proposed lines: [{ variantId, quantity, overridePrice, discountPct }], cleared on commit
+  report    Json? // ImportReport in app/models/import.server.ts
+  error     String?
+  createdBy BigInt?
+  createdAt DateTime @default(now())
+
+  @@index([shop, quoteId, createdAt])
 }
 
 model PrivacyRequest {

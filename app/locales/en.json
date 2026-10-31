@@ -1,0 +1,410 @@
+{
+  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "settings": "Settings" },
+  "common": { "save": "Save" },
+  "roles": { "OWNER": "Owner", "MANAGER": "Manager", "REP": "Sales rep", "VIEWER": "Viewer" },
+  "errors": {
+    "notFound": "We couldn't find that.",
+    "forbidden": "You don't have permission to do that.",
+    "conflict": "Something changed while you were working. Reload and try again.",
+    "invalidInput": "Please check these fields: {{fields}}",
+    "unexpected": "Something went wrong. Error id: {{id}}"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "metrics": {
+      "drafts": "Drafts",
+      "pending": "Pending approval",
+      "sent": "Sent this month",
+      "ordered": "Ordered this month",
+      "orderedWithRate": "{{count}} ({{rate}} % of sent)"
+    },
+    "attention": "Needs attention",
+    "allClear": "All clear.",
+    "syncProblem": "Sync problem",
+    "pending": "Waiting for your approval",
+    "expiring": "Expiring soon",
+    "nothingExpiring": "No quotes expire in the next 3 days.",
+    "expiresOn": "expires {{date}}"
+  },
+  "quotes": {
+    "title": "Quotes",
+    "new": "New quote",
+    "export": "Export CSV",
+    "exportFailed": "The export didn't work. Try again.",
+    "search": "Search quotes",
+    "searchPlaceholder": "Quote number or company",
+    "statusFilter": "Status",
+    "allStatuses": "All statuses",
+    "empty": "No quotes yet. Create your first quote.",
+    "noMatches": "No quotes match these filters.",
+    "columns": {
+      "number": "Quote",
+      "company": "Company",
+      "status": "Status",
+      "total": "Total",
+      "rep": "Sales rep",
+      "updated": "Updated"
+    }
+  },
+  "newQuote": {
+    "title": "New quote",
+    "chooseLocation": "Choose the company location",
+    "searchCompanies": "Search companies",
+    "searchPlaceholder": "Company name",
+    "noCompanies": "No companies found.",
+    "location": "Company location",
+    "noMainContact": "No main contact: set one in Shopify admin → Customers → Companies",
+    "refineSearch": "More companies match. Type more of the name to narrow the list.",
+    "create": "Create quote"
+  },
+  "quote": {
+    "heading": "{{label}} · v{{version}}",
+    "rep": "Sales rep: {{name}}",
+    "pdfFailed": "The PDF couldn't be created. Try again.",
+    "expiry": {
+      "label": "Expires on",
+      "help": "At the end of this day in the shop's time zone. Expired quotes can't be paid.",
+      "save": "Save date"
+    },
+    "expires": "Expires {{date}}",
+    "status": {
+      "DRAFT": "Draft",
+      "PENDING_APPROVAL": "Pending approval",
+      "APPROVED": "Approved",
+      "SENT": "Sent",
+      "ORDERED": "Ordered",
+      "DECLINED": "Declined",
+      "EXPIRED": "Expired",
+      "CANCELLED": "Cancelled"
+    },
+    "actions": {
+      "submit": "Submit",
+      "revise": "Revise (new version)",
+      "import": "Import CSV",
+      "cancel": "Cancel quote",
+      "pdf": "Download PDF"
+    },
+    "cancelModal": {
+      "heading": "Cancel this quote?",
+      "body": "The quote can't be sent or ordered after this. Its draft order in Shopify is deleted, so the customer's invoice link stops working.",
+      "reason": "Reason (optional)",
+      "confirm": "Cancel quote"
+    },
+    "problems": {
+      "heading": "This quote needs attention",
+      "blockingLines_one": "{{count}} line must be fixed before the quote can be submitted or sent.",
+      "blockingLines_other": "{{count}} lines must be fixed before the quote can be submitted or sent."
+    },
+    "customer": {
+      "title": "Customer",
+      "unavailable": "Not available from Shopify",
+      "noAddress": "No shipping address",
+      "noEmail": "No email address"
+    },
+    "lines": {
+      "title": "Lines",
+      "locked": "This version is locked. Revise the quote to change it.",
+      "empty": "No products yet.",
+      "product": "Product",
+      "quantity": "Quantity",
+      "catalogPrice": "Catalog price",
+      "overridePrice": "Your price",
+      "discount": "Discount",
+      "lineTotal": "Line total",
+      "actions": "Actions",
+      "quantityFor": "Quantity for {{product}}",
+      "overrideFor": "Your price for {{product}}",
+      "discountFor": "Discount % for {{product}}",
+      "removeFor": "Remove {{product}}",
+      "quantityError": "Whole number from 1 to 100,000",
+      "priceError": "Amount like 12.50",
+      "discountError": "Percent from 0 to 100",
+      "afterSave": "After saving",
+      "quoteDiscount": "Quote discount (%)",
+      "quoteDiscountValue": "Quote discount: {{value}} %",
+      "add": "Add products",
+      "save": "Save lines"
+    },
+    "totals": {
+      "list": "Catalog total: {{amount}}",
+      "discounts": "Discounts: {{amount}}",
+      "total": "Total before tax and shipping: {{amount}}",
+      "unsaved": "Unsaved changes: totals update when you save."
+    },
+    "approval": {
+      "title": "Approval",
+      "requestedBy": "Requested by {{name}}",
+      "comment": "Comment",
+      "commentHelp": "Required when rejecting.",
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "send": {
+      "title": "Send to the customer",
+      "help": "Creates or updates the draft order in Shopify, then Shopify emails the invoice to the company contact.",
+      "message": "Message to the customer",
+      "button": "Send"
+    },
+    "shopify": {
+      "title": "Shopify",
+      "openDraft": "Open draft order",
+      "openOrder": "Open order",
+      "openOrderNamed": "Open order {{name}}",
+      "invoiceSent": "Invoice sent {{date}}",
+      "final": "Final in Shopify: subtotal {{subtotal}}, tax {{tax}}, total {{total}}",
+      "retry": "Sync again"
+    },
+    "versions": {
+      "title": "Versions",
+      "row": "v{{number}} · {{date}} · {{total}}",
+      "noChanges": "No line changes from the previous version.",
+      "pdf": "PDF",
+      "pdfFor": "Download the PDF of version {{number}}",
+      "added": "Added {{title}} × {{afterQty}} at {{afterPrice}}",
+      "removed": "Removed {{title}}",
+      "changed": "{{title}}: quantity {{beforeQty}} → {{afterQty}}, price {{beforePrice}} → {{afterPrice}}, discount {{beforeDiscount}} % → {{afterDiscount}} %"
+    },
+    "history": {
+      "title": "History",
+      "row": "{{at}} · {{who}} · {{what}}",
+      "actors": { "STAFF": "Staff", "CUSTOMER": "Customer", "SYSTEM": "Vendora", "WEBHOOK": "Shopify" }
+    },
+    "errors": {
+      "locationNotFound": "Company location not found.",
+      "noMainContact": "{{company}} has no main contact. Set one in Shopify admin → Customers → Companies.",
+      "invalidTransition": "This quote can't do that in its current status.",
+      "changedByOther": "Someone else changed this quote. Reload to see the latest version.",
+      "versionLocked": "This version is locked. Revise the quote to make changes.",
+      "variantNotFound": "A product in this quote no longer exists.",
+      "noLines": "Add at least one product.",
+      "blockingProblems": "Fix the highlighted lines first.",
+      "pricesChanged": "Catalog prices changed since this quote was edited. Review the new prices.",
+      "notApproved": "Only approved quotes can be sent.",
+      "invalidDate": "Choose a valid date.",
+      "expiryInPast": "The expiry date can't be in the past."
+    }
+  },
+  "history": {
+    "quote": {
+      "created": "created the quote",
+      "lines_saved": "saved the lines",
+      "submitted": "submitted for approval",
+      "approved": "approved",
+      "rejected": "rejected",
+      "revised": "started a new version",
+      "sent": "sent the invoice",
+      "ordered": "the customer placed the order",
+      "cancelled": "cancelled the quote",
+      "expired": "the quote expired",
+      "expiry_changed": "changed the expiry date",
+      "expiry_reminded": "sent the expiry reminder"
+    },
+    "sync": {
+      "requested": "asked to sync with Shopify",
+      "succeeded": "synced the draft order",
+      "adopted": "linked the existing draft order",
+      "failed": "Shopify rejected the draft order",
+      "tag_collision": "found another draft order with this quote's tag",
+      "deleted": "deleted the draft order"
+    },
+    "attention": { "raised": "flagged a problem" },
+    "invoice": { "failed": "the invoice couldn't be sent" },
+    "import": { "committed": "imported lines from a CSV file" }
+  },
+  "problems": {
+    "QTY_BELOW_MIN": "Below the minimum quantity",
+    "QTY_ABOVE_MAX": "Above the maximum quantity",
+    "QTY_NOT_INCREMENT": "Quantity must be in steps of the set increment",
+    "OUT_OF_STOCK": "Not enough stock",
+    "PRODUCT_NOT_ACTIVE": "Product isn't active",
+    "GIFT_CARD": "Gift cards can't be quoted",
+    "CURRENCY_MISMATCH": "The company's currency changed",
+    "PRODUCT_DELETED": "Product was deleted"
+  },
+  "approval": {
+    "errors": {
+      "commentRequired": "Add a comment explaining the rejection.",
+      "nothingPending": "There's nothing to approve.",
+      "selfApproval": "Someone else must approve your quote."
+    },
+    "reasons": {
+      "ALWAYS": "All quotes need approval",
+      "DISCOUNT_OVER": "Discount {{detail}}",
+      "TOTAL_OVER": "Total {{detail}}",
+      "NO_THRESHOLD_FOR_CURRENCY": "No approval limit set for {{detail}}",
+      "LINE_PRICE_OVERRIDE_BELOW_CATALOG": "A line is priced below the catalog {{detail}}"
+    }
+  },
+  "sync": {
+    "errors": { "alreadyRunning": "Already syncing with Shopify." },
+    "status": {
+      "NONE": "Not in Shopify",
+      "QUEUED": "Waiting to sync",
+      "SYNCING": "Syncing…",
+      "SYNCED": "In Shopify",
+      "FAILED": "Sync failed",
+      "NEEDS_ATTENTION": "Needs attention"
+    }
+  },
+  "attention": {
+    "SYNC_FAILED": "Shopify rejected the draft order: {{message}}",
+    "TAG_COLLISION": "Another draft order carries this quote's tag.",
+    "DRAFT_DELETED": "The draft order was deleted in Shopify.",
+    "CHANGED_IN_SHOPIFY": "The draft order was edited in Shopify.",
+    "PRODUCT_DELETED": "A product in this quote was deleted.",
+    "PRODUCT_NOT_ACTIVE": "A product in this quote isn't active any more.",
+    "PRICE_MISMATCH": "Shopify's subtotal differs from the quote, so the invoice wasn't sent.",
+    "INVOICE_FAILED": "The invoice couldn't be sent: {{message}}",
+    "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed."
+  },
+  "import": {
+    "title": "Import lines into {{label}}",
+    "locked": {
+      "heading": "This version is locked",
+      "body": "Revise the quote to get an editable version, then import."
+    },
+    "upload": {
+      "title": "Upload a CSV file",
+      "failed": "The last file could not be checked",
+      "help": "Columns: sku and quantity (required), price and discount (optional). Comma or semicolon separated, up to 10,000 rows and 5 MB. Repeated SKUs are merged.",
+      "file": "CSV file",
+      "check": "Check file",
+      "template": "Download template"
+    },
+    "checking": {
+      "label": "Checking the file",
+      "rows_one": "Checking {{count}} row…",
+      "rows_other": "Checking {{count}} rows…"
+    },
+    "summary": {
+      "lines_one": "{{count}} line to add",
+      "lines_other": "{{count}} lines to add",
+      "warnings_one": "{{count}} warning",
+      "warnings_other": "{{count}} warnings",
+      "errors_one": "{{count}} error",
+      "errors_other": "{{count}} errors",
+      "merged_one": "{{count}} merged row",
+      "merged_other": "{{count}} merged rows"
+    },
+    "report": {
+      "show": "Show",
+      "all": "All rows",
+      "download": "Download report (CSV)",
+      "row": "Row",
+      "sku": "SKU",
+      "status": "Status",
+      "messages": "Messages",
+      "detail": "Detail"
+    },
+    "rowStatus": { "OK": "OK", "WARNING": "Warning", "ERROR": "Error", "MERGED": "Merged" },
+    "codes": {
+      "MISSING_SKU": "SKU is empty",
+      "UNKNOWN_SKU": "No product with this SKU",
+      "AMBIGUOUS_SKU": "Several products have this SKU",
+      "INVALID_QUANTITY": "Quantity must be a whole number from 1 to 100,000",
+      "INVALID_PRICE": "Price must be an amount like 12.50",
+      "INVALID_DISCOUNT": "Discount must be a percent from 0 to 100",
+      "PRODUCT_NOT_ACTIVE": "Product isn't active",
+      "GIFT_CARD": "Gift cards can't be quoted",
+      "QTY_BELOW_MIN": "Below the minimum quantity",
+      "QTY_ABOVE_MAX": "Above the maximum quantity",
+      "QTY_NOT_INCREMENT": "Quantity must be in steps of the set increment",
+      "CURRENCY_MISMATCH": "The company's currency changed",
+      "DUPLICATE_MERGED": "Repeated SKU: quantities added",
+      "DUPLICATE_CONFLICT": "Repeated SKU with different prices or discounts",
+      "MERGED_INTO": "Added to another row",
+      "OUT_OF_STOCK": "Not enough stock"
+    },
+    "commit": {
+      "mode": "How to add the lines",
+      "append": "Add to the existing lines (same product: quantities are added)",
+      "replace": "Replace all existing lines",
+      "button_one": "Add {{count}} line",
+      "button_other": "Add {{count}} lines"
+    },
+    "errors": {
+      "missingColumns": "The file needs at least SKU and quantity columns.",
+      "tooManyRows": "Up to {{max}} rows per file.",
+      "tooLarge": "Files can be up to {{maxMb}} MB.",
+      "noFile": "Choose a CSV file.",
+      "notReady": "This import was already added or isn't ready yet."
+    }
+  },
+  "team": { "errors": { "lastOwner": "There must be at least one owner." } },
+  "pdf": {
+    "title": "Quote {{number}}",
+    "version": "Version {{version}}",
+    "issued": "Issued {{date}}",
+    "validUntil": "Valid until {{date}}",
+    "preparedFor": "Prepared for",
+    "shipTo": "Ship to",
+    "billTo": "Bill to",
+    "sku": "SKU",
+    "product": "Product",
+    "qty": "Qty",
+    "unitPrice": "Unit price",
+    "discount": "Discount",
+    "lineTotal": "Total",
+    "listTotal": "List total",
+    "discounts": "Discounts",
+    "totalExclTax": "Total (excl. tax and shipping)",
+    "taxNote": "Taxes and shipping are calculated at checkout.",
+    "notes": "Notes",
+    "terms": "Terms",
+    "page": "Page {{page}} of {{pages}}"
+  },
+  "settings": {
+    "title": "Settings",
+    "errors": {
+      "numberTooLow": "The next quote number can't be lower than {{min}}.",
+      "prefix": "Use 1–8 capital letters, digits or dashes.",
+      "logoUrl": "Use the URL of a file uploaded in Shopify admin → Content → Files (https://cdn.shopify.com/…)."
+    },
+    "general": {
+      "title": "General",
+      "prefix": "Quote number prefix",
+      "prefixHelp": "Shown before the number, e.g. Q- → Q-1042. Capital letters, digits and dashes.",
+      "nextNumber": "Next quote number",
+      "nextNumberHelp": "Can only go up, so numbers are never reused.",
+      "expiryDays": "Quotes expire after (days)",
+      "reserveInventory": "Reserve stock while a quote is open",
+      "reserveInventoryHelp": "Draft orders hold the items until the quote expires.",
+      "notifyEmails": "Notification emails",
+      "notifyEmailsHelp": "Comma-separated. Vendora emails these addresses when a quote needs someone.",
+      "save": "Save general settings"
+    },
+    "branding": {
+      "title": "Branding",
+      "help": "Shown on quote PDFs.",
+      "logoUrl": "Logo URL",
+      "logoUrlHelp": "Upload the logo in Shopify admin → Content → Files, then paste its URL here. PNG or JPG.",
+      "terms": "Terms",
+      "termsHelp": "Printed at the end of every quote. Up to 4,000 characters.",
+      "footer": "Footer",
+      "footerHelp": "One line at the bottom of every page, e.g. your company details. Up to 200 characters.",
+      "save": "Save branding"
+    },
+    "team": {
+      "title": "Team",
+      "help": "Staff appear here after they open Vendora once. Owners manage settings and roles, managers approve quotes, sales reps create and send them, viewers can only look.",
+      "name": "Name",
+      "email": "Email",
+      "role": "Role",
+      "lastSeen": "Last seen",
+      "roleFor": "Role for {{name}}"
+    },
+    "approvals": {
+      "title": "Approval rules",
+      "help": "A submitted quote needs a manager's approval when it breaks any of these rules. Quotes in a currency without a limit always need approval.",
+      "maxDiscount": "Maximum discount without approval (%)",
+      "maxDiscountHelp": "Compared with the catalog price total. Leave empty for no limit.",
+      "maxTotalTitle": "Maximum quote total per currency",
+      "currency": "Currency",
+      "currencyHelp": "Add a currency, e.g. CAD",
+      "maxTotal": "Maximum total",
+      "alwaysRequire": "Always require approval",
+      "differentApprover": "The approver must be a different person than the requester",
+      "save": "Save approval rules"
+    }
+  }
+}
