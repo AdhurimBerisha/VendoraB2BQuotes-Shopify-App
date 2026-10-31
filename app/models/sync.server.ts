@@ -98,8 +98,8 @@ const runSync = async (admin: AdminApiContext, job: SyncJob) => {
   }
 
   try {
-    // An upsert queued before a cancel may claim the quote first: it deletes too.
-    if (job.op === "delete" || quote.status === "CANCELLED") await doDelete(admin, quote);
+    // An upsert queued before a cancel or expiry may claim the quote first: it deletes too.
+    if (job.op === "delete" || quote.status === "CANCELLED" || quote.status === "EXPIRED") await doDelete(admin, quote);
     else await doUpsert(admin, quote, job.send);
   } catch (error) {
     if (error instanceof ShopifyUserErrors) {

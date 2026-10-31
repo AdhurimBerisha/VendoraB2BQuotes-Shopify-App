@@ -10,7 +10,7 @@ import StatusBadge from "../components/StatusBadge";
 import usePollWhile from "../components/usePollWhile";
 import db from "../db.server";
 import { runAction } from "../lib/action.server";
-import { formatDateTime } from "../lib/dates";
+import { formatDateTime, localDateString } from "../lib/dates";
 import { D, type Money, formatMoney } from "../lib/money";
 import { gid, parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
@@ -19,7 +19,7 @@ import { attentionItems } from "../models/attention";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
 import { BLOCKING, type LineProblem } from "../models/pricing";
-import { cancelQuote, getQuote, quoteLabel } from "../models/quote.server";
+import { cancelQuote, getQuote, quoteLabel, setExpiry } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
@@ -83,6 +83,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       currency: quote.currencyCode,
       rep: staffName(quote.assignedToUserId),
       expires: quote.expiresAt ? when(quote.expiresAt) : null,
+      expiresOn: quote.expiresAt ? localDateString(quote.expiresAt, timezone) : "",
+      today: localDateString(new Date(), timezone),
       draftOrderNumericId: quote.draftOrderId?.split("/").pop() ?? null,
       orderNumericId: quote.orderId?.split("/").pop() ?? null,
       attention: attentionItems(quote.attention).map((item) => ({ code: item.code, message: item.message ?? "" })),
@@ -155,6 +157,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       cancel: can(actor, "quote.cancel.any") || (isOwn && can(actor, "quote.cancel.own")),
       import: can(actor, "import.run"),
       retry: can(actor, "attention.resolve"),
+      setExpiry: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
     },
   };
 };
@@ -196,6 +199,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("send"), message: z.string().max(5000).default("") }),
   z.object({ intent: z.literal("retrySync") }),
   z.object({ intent: z.literal("cancel"), reason: z.string().max(500).optional() }),
+  z.object({ intent: z.literal("setExpiry"), expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
 ]);
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -229,6 +233,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         break;
       case "cancel":
         await cancelQuote(actor, id, input.reason);
+        break;
+      case "setExpiry":
+        await setExpiry(actor, id, input.expiresOn);
         break;
     }
     return { intent: input.intent };
@@ -285,6 +292,7 @@ export default function QuoteDetail() {
         </s-stack>
         <ErrorBanner result={fetcher.data} />
         <ProblemsBanner data={data} />
+        {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
       </s-stack>
 
       <CustomerSection customer={data.customer} />
@@ -320,6 +328,31 @@ export default function QuoteDetail() {
         </fetcher.Form>
       </s-modal>
     </s-page>
+  );
+}
+
+// The quote expires at the end of this day in the shop's time zone.
+function ExpiryForm({ expiresOn, today }: { expiresOn: string; today: string }) {
+  const { t } = useTranslation();
+  const fetcher = useFetcher<typeof action>();
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="setExpiry" />
+      <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
+        <s-date-field
+          label={t("quote.expiry.label")}
+          details={t("quote.expiry.help")}
+          name="expiresOn"
+          value={expiresOn}
+          allow={`${today}--`}
+          required
+        ></s-date-field>
+        <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+          {t("quote.expiry.save")}
+        </s-button>
+      </s-grid>
+      <ErrorBanner result={fetcher.data} />
+    </fetcher.Form>
   );
 }
 

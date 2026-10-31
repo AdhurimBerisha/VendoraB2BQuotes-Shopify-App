@@ -14,6 +14,8 @@ const QUEUES = {
   "send-invoice": { retryLimit: 6, retryDelay: 60, retryBackoff: true, retryDelayMax: 3600 },
   "process-webhook": { retryLimit: 8, retryDelay: 30, retryBackoff: true, retryDelayMax: 3600 },
   "import-csv": { retryLimit: 3, retryDelay: 30, retryBackoff: true, expireInSeconds: 600 },
+  // Scheduled hourly; a failed run is simply retried by the next one.
+  "expire-quotes": { retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 },
   privacy: { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
 };
 type QueueName = keyof typeof QUEUES;

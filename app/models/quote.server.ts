@@ -1,10 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import db from "../db.server";
+import { addDaysEndOfDay, endOfLocalDay } from "../lib/dates";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { enqueue, getBoss } from "../jobs/queue.server";
 import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
-import type { StaffActor } from "./actor";
+import type { StaffActor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
 import { requireCancel, requirePermission } from "./permissions";
 
@@ -76,7 +77,7 @@ const createQuote = async (actor: StaffActor, input: { locationId: string }) => 
         contactCustomerId: contact.customer?.id ?? null,
         currencyCode: location.currency,
         assignedToUserId: actor.userId,
-        expiresAt: new Date(Date.now() + shop.defaultExpiryDays * 86_400_000), // end of day in shop tz: M2.9
+        expiresAt: addDaysEndOfDay(new Date(), shop.defaultExpiryDays, shop.timezone),
       },
     });
     const firstVersion = await tx.quoteVersion.create({
@@ -171,6 +172,47 @@ const cancelQuote = async (actor: StaffActor, quoteId: string, reason?: string) 
   console.log("quote cancelled", { shop: actor.shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
 };
 
+const OPEN: QuoteStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
+
+// New expiry: the end of a shop-local day ("YYYY-MM-DD"), while the quote is still open.
+// ponytail: a SENT quote's draft order keeps its old reserveInventoryUntil until the next sync;
+// re-sync here if merchants use reserved stock with changed expiries.
+const setExpiry = async (actor: StaffActor, quoteId: string, localDate: string) => {
+  requirePermission(actor, "quote.edit");
+  const shop = await db.shop.findUniqueOrThrow({ where: { id: actor.shop } });
+  const expiresAt = endOfLocalDay(localDate, shop.timezone);
+  if (!expiresAt) throw new UserError("quote.errors.invalidDate");
+  if (expiresAt < new Date()) throw new UserError("quote.errors.expiryInPast");
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.quote.updateMany({
+      where: { id: quoteId, shop: actor.shop, status: { in: OPEN } },
+      data: { expiresAt },
+    });
+    if (count !== 1) throw new ConflictError("quote.errors.invalidTransition", { action: "expire" });
+    await audit(tx, actor, quoteId, "quote.expiry_changed", { localDate });
+  });
+  console.log("quote expiry changed", { shop: actor.shop, quoteId, expiresAt: expiresAt.toISOString() });
+};
+
+// Past its expiry → EXPIRED; its draft order is deleted so the invoice link stops working.
+// Returns false when there was nothing to do (not due, already closed).
+const expireQuote = async (shop: string, quoteId: string, now = new Date()) => {
+  const system: SystemActor = { type: "SYSTEM", shop, reason: "expiry" };
+  const quote = await db.quote.findFirst({ where: { id: quoteId, shop } });
+  if (!quote?.expiresAt || quote.expiresAt > now || !OPEN.includes(quote.status as QuoteStatus)) return false;
+  if (quote.draftOrderId) await getBoss(); // start pg-boss outside the transaction (see enqueue)
+  await db.$transaction(async (tx) => {
+    await transition(tx, shop, quoteId, "expire", "EXPIRED");
+    await audit(tx, system, quoteId, "quote.expired", { expiresAt: quote.expiresAt?.toISOString() ?? null });
+    if (!quote.draftOrderId) return;
+    await tx.quote.update({ where: { id: quoteId }, data: { syncStatus: "QUEUED", syncError: null } });
+    await enqueue("sync-draft-order", { shop, quoteId, op: "delete" }, { singletonKey: `${quoteId}:delete`, tx });
+  });
+  // M3.3: email the assigned rep "quote expired".
+  console.log("quote expired", { shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+  return true;
+};
+
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
 export {
@@ -178,12 +220,14 @@ export {
   TRANSITIONS,
   cancelQuote,
   createQuote,
+  expireQuote,
   getQuote,
   listFiltersSchema,
   listQuotes,
   quoteLabel,
   quoteWhere,
   searchFilters,
+  setExpiry,
   transition,
 };
 export type { QuoteAction, QuoteFilters, QuoteStatus };

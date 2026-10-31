@@ -60,6 +60,11 @@
   "quote": {
     "heading": "{{label}} · v{{version}}",
     "rep": "Sales rep: {{name}}",
+    "expiry": {
+      "label": "Expires on",
+      "help": "At the end of this day in the shop's time zone. Expired quotes can't be paid.",
+      "save": "Save date"
+    },
     "expires": "Expires {{date}}",
     "status": {
       "DRAFT": "Draft",
@@ -170,7 +175,9 @@
       "noLines": "Add at least one product.",
       "blockingProblems": "Fix the highlighted lines first.",
       "pricesChanged": "Catalog prices changed since this quote was edited. Review the new prices.",
-      "notApproved": "Only approved quotes can be sent."
+      "notApproved": "Only approved quotes can be sent.",
+      "invalidDate": "Choose a valid date.",
+      "expiryInPast": "The expiry date can't be in the past."
     }
   },
   "history": {
@@ -183,7 +190,10 @@
       "revised": "started a new version",
       "sent": "sent the invoice",
       "ordered": "the customer placed the order",
-      "cancelled": "cancelled the quote"
+      "cancelled": "cancelled the quote",
+      "expired": "the quote expired",
+      "expiry_changed": "changed the expiry date",
+      "expiry_reminded": "sent the expiry reminder"
     },
     "sync": {
       "requested": "asked to sync with Shopify",
