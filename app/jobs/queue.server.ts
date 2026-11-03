@@ -17,6 +17,8 @@ const QUEUES = {
   // Scheduled hourly; a failed run is simply retried by the next one.
   "expire-quotes": { retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 },
   privacy: { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
+  // A provider outage or a bad token only delays emails (scenario 13).
+  "send-email": { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
 };
 type QueueName = keyof typeof QUEUES;
 

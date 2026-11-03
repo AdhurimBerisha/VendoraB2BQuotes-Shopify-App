@@ -10,6 +10,7 @@ const loadTestEnv = (): Record<string, string> => {
     }
   }
   env.DATABASE_URL ??= process.env.DATABASE_URL ?? "";
+  env.APP_SIGNING_SECRET ??= "vitest-signing-secret"; // signed quote links (M3.2)
   if (!env.DATABASE_URL) {
     throw new Error("No test DATABASE_URL: create .env.test (see roadmap/dev/M1.2)");
   }

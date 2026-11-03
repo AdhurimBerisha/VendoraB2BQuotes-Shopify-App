@@ -9,18 +9,36 @@ import { parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { type ApprovalRules, parseRules, rulesFromForm } from "../models/approval";
 import { saveApprovalRules } from "../models/approval.server";
-import { ROLES, requirePermission } from "../models/permissions";
+import { EMAIL_TYPES } from "../emails/templates";
+import { ROLES, can } from "../models/permissions";
 import { brandingFromForm, generalSettingsFromForm, getShop, saveBranding, saveGeneralSettings } from "../models/shop.server";
-import { listStaff, setRole } from "../models/staff.server";
+import {
+  getNotificationPrefs,
+  listStaff,
+  notificationPrefsFromForm,
+  saveNotificationPrefs,
+  setRole,
+} from "../models/staff.server";
 
-// Settings: General, Branding, Team and Approval rules. Notifications (M3.3) add their own
-// section and intent.
+// Settings: every staff member sets their own Notifications; General, Branding, Team and
+// Approval rules need settings.manage (each save checks it again).
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
-  requirePermission(actor, "settings.manage");
+  const notifications = await getNotificationPrefs(actor);
+  if (!can(actor, "settings.manage")) return { notifications, manage: null };
   const staff = await listStaff(actor.shop);
   const shop = await getShop(actor.shop);
+  return {
+    notifications,
+    manage: manageData(shop, staff),
+  };
+};
+
+const manageData = (
+  shop: Awaited<ReturnType<typeof getShop>>,
+  staff: Awaited<ReturnType<typeof listStaff>>,
+) => {
   return {
     general: {
       quotePrefix: shop?.quotePrefix ?? "Q-",
@@ -56,6 +74,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   return runAction(async () => {
     const intent = form.get("intent");
+    if (intent === "saveNotifications") {
+      await saveNotificationPrefs(actor, notificationPrefsFromForm(form));
+      return null;
+    }
     if (intent === "saveGeneral") {
       await saveGeneralSettings(actor, generalSettingsFromForm(form));
       return null;
@@ -74,14 +96,62 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 };
 
-type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
+type ManageData = ReturnType<typeof manageData>;
 
 export default function Settings() {
-  const { general, branding, staff, rules } = useLoaderData<typeof loader>();
+  const { notifications, manage } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
 
   return (
     <s-page heading={t("settings.title")}>
+      <NotificationsSection notifications={notifications} />
+      {manage && <ManageSections manage={manage} />}
+    </s-page>
+  );
+}
+
+function NotificationsSection({
+  notifications,
+}: {
+  notifications: ReturnType<typeof useLoaderData<typeof loader>>["notifications"];
+}) {
+  const fetcher = useFetcher<typeof action>();
+  const { t } = useTranslation();
+  return (
+    <s-section heading={t("settings.notifications.title")}>
+      <fetcher.Form method="post">
+        <input type="hidden" name="intent" value="saveNotifications" />
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            {notifications.email
+              ? t("settings.notifications.help", { email: notifications.email })
+              : t("settings.notifications.noEmail")}
+          </s-paragraph>
+          {EMAIL_TYPES.map((type) => (
+            <s-switch
+              key={type}
+              label={t(`settings.notifications.types.${type}`)}
+              name={type}
+              value="on"
+              checked={notifications.prefs[type]}
+            ></s-switch>
+          ))}
+          <s-button type="submit" variant="primary" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+            {t("settings.notifications.save")}
+          </s-button>
+          <ErrorBanner result={fetcher.data} />
+        </s-stack>
+      </fetcher.Form>
+    </s-section>
+  );
+}
+
+function ManageSections({ manage }: { manage: ManageData }) {
+  const { general, branding, staff, rules } = manage;
+  const { t } = useTranslation();
+
+  return (
+    <>
       <GeneralSection general={general} />
       <BrandingSection branding={branding} />
       <s-section heading={t("settings.team.title")}>
@@ -101,11 +171,11 @@ export default function Settings() {
         </s-table>
       </s-section>
       <ApprovalRulesSection rules={rules} />
-    </s-page>
+    </>
   );
 }
 
-function GeneralSection({ general }: { general: LoaderData["general"] }) {
+function GeneralSection({ general }: { general: ManageData["general"] }) {
   const fetcher = useFetcher<typeof action>();
   const { t } = useTranslation();
   return (
@@ -164,7 +234,7 @@ function GeneralSection({ general }: { general: LoaderData["general"] }) {
   );
 }
 
-function BrandingSection({ branding }: { branding: LoaderData["branding"] }) {
+function BrandingSection({ branding }: { branding: ManageData["branding"] }) {
   const fetcher = useFetcher<typeof action>();
   const { t } = useTranslation();
   return (

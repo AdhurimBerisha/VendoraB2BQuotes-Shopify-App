@@ -12,6 +12,7 @@ const upsertShopOnInstall = async (admin: AdminApiContext, shop: string) => {
   const info = await fetchShopInfo(admin);
   const data = {
     shopGid: info.id,
+    name: info.name,
     timezone: info.ianaTimezone,
     currencyCode: info.currencyCode,
     uninstalledAt: null,

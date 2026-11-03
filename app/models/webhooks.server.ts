@@ -1,6 +1,7 @@
 import db from "../db.server";
 import type { WebhookActor } from "./actor";
-import { raise } from "./attention";
+import { raise } from "./attention.server";
+import { notify } from "./notify.server";
 import { audit } from "./audit.server";
 import type { LineProblem } from "./pricing";
 import { type QuoteStatus, transition } from "./quote.server";
@@ -70,6 +71,7 @@ const onDraftUpdate = async (shop: string, payload: DraftOrderPayload) => {
       if (quote.status === "APPROVED" || quote.status === "SENT") {
         await transition(tx, shop, quote.id, "order", "ORDERED", { orderId });
         await audit(tx, actor, quote.id, "quote.ordered", { orderId });
+        await notify(tx, shop, "quoteOrdered", { kind: "user", userId: quote.assignedToUserId }, { quoteId: quote.id });
       } else if (quote.status !== "ORDERED") {
         // e.g. the buyer paid just before the quote was cancelled: keep the order, tell a human.
         await tx.quote.update({ where: { id: quote.id }, data: { orderId } });

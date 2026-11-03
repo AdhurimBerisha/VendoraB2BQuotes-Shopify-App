@@ -1,9 +1,11 @@
 import { getBoss } from "./queue.server";
 import { runPrivacy, type PrivacyJob } from "./privacy.server";
+import type { SendEmailJob } from "../models/notify.server";
 import type { SendInvoiceJob, SyncJob } from "../models/sync.server";
 import { runExpireQuotes } from "./expire-quotes.server";
 import { type ImportCsvJob, runImportCsv } from "./import-csv.server";
 import { type ProcessWebhookJob, runProcessWebhook } from "./process-webhook.server";
+import { runSendEmail } from "./send-email.server";
 import { runSendInvoiceJob, runSyncDraftOrder } from "./sync-draft-order.server";
 
 declare global {
@@ -29,6 +31,9 @@ const startWorkers = async () => {
   await boss.work("expire-quotes", { batchSize: 1 }, async () => runExpireQuotes());
   await boss.schedule("expire-quotes", "0 * * * *"); // upsert: safe on every start
   await boss.work<PrivacyJob>("privacy", { batchSize: 1 }, async ([job]) => runPrivacy(job.data));
+  await boss.work<SendEmailJob>("send-email", { batchSize: 1 }, async ([job]) =>
+    runSendEmail(job.data, { jobId: job.id }),
+  );
   console.log("[workers] started");
 
   // Let running jobs finish before the process exits.

@@ -170,7 +170,7 @@ const getDraftOrder = async (admin: AdminApiContext, id: string) => {
       `#graphql
       query VendoraDraftOrder($id: ID!) {
         draftOrder(id: $id) {
-          id status updatedAt invoiceSentAt
+          id status updatedAt invoiceSentAt invoiceUrl
           subtotalPriceSet { presentmentMoney { amount currencyCode } }
         }
       }`,
@@ -212,13 +212,14 @@ const sendInvoice = async (
     admin.graphql(
       `#graphql
       mutation VendoraInvoiceSend($id: ID!, $email: EmailInput) {
-        draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id invoiceSentAt } userErrors { field message } }
+        draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id invoiceSentAt invoiceUrl } userErrors { field message } }
       }`,
       { variables: { id, email } },
     ),
   );
   const { data } = await response.json();
   throwOnUserErrors(data?.draftOrderInvoiceSend?.userErrors);
+  return data?.draftOrderInvoiceSend?.draftOrder?.invoiceUrl ?? null;
 };
 
 export {

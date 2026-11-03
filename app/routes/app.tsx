@@ -7,7 +7,6 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { createI18n, pickLocale } from "../lib/i18n";
 import { getActor } from "../models/actor.server";
-import { can } from "../models/permissions";
 import { getShop, upsertShopOnInstall } from "../models/shop.server";
 
 // Records the staff member on every admin page load. Child loaders that need the role call getActor too
@@ -17,38 +16,38 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Backfill for shops installed before afterAuth existed, or if afterAuth failed.
   const shop = await getShop(actor.shop);
-  if (!shop || shop.uninstalledAt) await upsertShopOnInstall(actor.admin, actor.shop);
+  // !shop.name: shops installed before M3.3 get their name for email footers.
+  if (!shop || shop.uninstalledAt || !shop.name) await upsertShopOnInstall(actor.admin, actor.shop);
 
   return {
     // eslint-disable-next-line no-undef
     apiKey: process.env.SHOPIFY_API_KEY || "",
     // Admin language: ?locale= on the first load, else the staff member's saved locale.
     locale: pickLocale(new URL(request.url).searchParams.get("locale") ?? actor.locale),
-    canManageSettings: can(actor, "settings.manage"),
   };
 };
 
 export default function App() {
-  const { apiKey, locale, canManageSettings } = useLoaderData<typeof loader>();
+  const { apiKey, locale } = useLoaderData<typeof loader>();
   const i18n = useMemo(() => createI18n(locale), [locale]);
 
   return (
     <AppProvider apiKey={apiKey}>
       <I18nextProvider i18n={i18n}>
-        <Nav canManageSettings={canManageSettings} />
+        <Nav />
         <Outlet />
       </I18nextProvider>
     </AppProvider>
   );
 }
 
-function Nav({ canManageSettings }: { canManageSettings: boolean }) {
+function Nav() {
   const { t } = useTranslation();
   return (
     <s-app-nav>
       <s-link href="/app">{t("nav.dashboard")}</s-link>
       <s-link href="/app/quotes">{t("nav.quotes")}</s-link>
-      {canManageSettings && <s-link href="/app/settings">{t("nav.settings")}</s-link>}
+      <s-link href="/app/settings">{t("nav.settings")}</s-link>
     </s-app-nav>
   );
 }

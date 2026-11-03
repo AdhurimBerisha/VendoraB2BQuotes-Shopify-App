@@ -1,6 +1,8 @@
 import db from "../db.server";
 import { audit } from "../models/audit.server";
+import { notify } from "../models/notify.server";
 import { expireQuote } from "../models/quote.server";
+import { localDateString } from "../lib/dates";
 
 const OPEN = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
 const BATCH = 200;
@@ -45,8 +47,12 @@ const runExpireQuotes = async (now = new Date()) => {
       expiresAt: { gte: now, lt: new Date(now.getTime() + REMIND_MS) },
       shop: { in: shops },
     },
-    select: { id: true, shop: true, expiresAt: true },
+    select: { id: true, shop: true, expiresAt: true, assignedToUserId: true },
   });
+  const timezones = new Map(
+    (await db.shop.findMany({ where: { id: { in: [...new Set(soon.map((quote) => quote.shop))] } }, select: { id: true, timezone: true } }))
+      .map((shop) => [shop.id, shop.timezone]),
+  );
   let reminded = 0;
   for (const quote of soon) {
     const expiresAt = quote.expiresAt?.toISOString() ?? "";
@@ -54,9 +60,12 @@ const runExpireQuotes = async (now = new Date()) => {
       where: { shop: quote.shop, quoteId: quote.id, action: "quote.expiry_reminded", data: { path: ["expiresAt"], equals: expiresAt } },
     });
     if (already) continue;
-    await audit(db, { type: "SYSTEM", shop: quote.shop, reason: "expiry" }, quote.id, "quote.expiry_reminded", { expiresAt });
+    const date = quote.expiresAt ? localDateString(quote.expiresAt, timezones.get(quote.shop) ?? "UTC") : "";
+    await db.$transaction(async (tx) => {
+      await audit(tx, { type: "SYSTEM", shop: quote.shop, reason: "expiry" }, quote.id, "quote.expiry_reminded", { expiresAt });
+      await notify(tx, quote.shop, "expiringSoon", { kind: "user", userId: quote.assignedToUserId }, { quoteId: quote.id, date });
+    });
     reminded++;
-    // M3.3: email the assigned rep "expiring soon".
   }
 
   console.log("expire-quotes done", { shops: shops.length, expired, failed, reminded });

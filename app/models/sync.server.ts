@@ -3,12 +3,15 @@ import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { enqueue, getBoss } from "../jobs/queue.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
+import { createI18n } from "../lib/i18n";
 import { D } from "../lib/money";
+import { quoteLink } from "../lib/signed-token.server";
 import { ShopifyUserErrors } from "../shopify/client.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import * as drafts from "../shopify/draft-orders.server";
 import type { Actor, StaffActor, SystemActor } from "./actor";
-import { raise, withoutItems } from "./attention";
+import { withoutItems } from "./attention";
+import { raise } from "./attention.server";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { BLOCKING, type LineProblem } from "./pricing";
@@ -219,7 +222,10 @@ const doDelete = async (admin: AdminApiContext, quote: { id: string; shop: strin
 
 // Sends Shopify's invoice for a synced, approved version. One email per version, also after crashes.
 const runSendInvoice = async (admin: AdminApiContext, job: SendInvoiceJob) => {
-  const quote = await db.quote.findFirstOrThrow({ where: { id: job.quoteId, shop: job.shop } });
+  const quote = await db.quote.findFirstOrThrow({
+    where: { id: job.quoteId, shop: job.shop },
+    include: { currentVersion: { select: { versionNumber: true } } },
+  });
   if (quote.currentVersionId !== job.versionId || quote.status !== "APPROVED" || !quote.draftOrderId) {
     console.log("send-invoice skipped", { quoteId: quote.id, status: quote.status }); // superseded or already sent
     return;
@@ -240,7 +246,7 @@ const runSendInvoice = async (admin: AdminApiContext, job: SendInvoiceJob) => {
     const draft = await drafts.getDraftOrder(admin, draftOrderId);
     const sentAt = draft?.invoiceSentAt ? new Date(draft.invoiceSentAt) : null;
     if (sentAt && sentAt.getTime() >= quote.invoiceRequestedAt.getTime() - CLOCK_SKEW_MS) {
-      return markSent(quote.id, job);
+      return markSent(quote.id, job, draft?.invoiceUrl ?? null);
     }
     // Not sent: send now.
   }
@@ -258,24 +264,36 @@ const runSendInvoice = async (admin: AdminApiContext, job: SendInvoiceJob) => {
   if (!to) return failed("The contact has no email address");
 
   const shop = await db.shop.findUniqueOrThrow({ where: { id: job.shop } });
+  const link = quoteLink(process.env.SHOPIFY_APP_URL ?? "", {
+    shop: job.shop,
+    quoteId: quote.id,
+    version: quote.currentVersion?.versionNumber ?? 1,
+    expiresAt: quote.expiresAt,
+  });
+  // ponytail: English only until a second language exists; then use the contact's customer locale.
+  const { t } = createI18n("en");
+  let invoiceUrl: string | null;
   try {
-    await drafts.sendInvoice(admin, draftOrderId, {
+    invoiceUrl = await drafts.sendInvoice(admin, draftOrderId, {
       to,
-      subject: `Quote ${shop.quotePrefix}${quote.number}`, // translated in M2.8 (contact locale)
-      customMessage: job.message, // M3.2 appends the signed link to the PDF
+      subject: `Quote ${shop.quotePrefix}${quote.number}`,
+      customMessage: `${job.message}
+
+${t("email.viewQuote")}: ${link}`.trim(),
     });
   } catch (error) {
     if (error instanceof ShopifyUserErrors) return failed(error.message);
     throw error; // unclear → retry → the claim branch checks invoiceSentAt before resending
   }
-  await markSent(quote.id, job);
+  await markSent(quote.id, job, invoiceUrl);
 };
 
-const markSent = async (quoteId: string, job: SendInvoiceJob) => {
+const markSent = async (quoteId: string, job: SendInvoiceJob, invoiceUrl: string | null) => {
   await db.$transaction(async (tx) => {
     const { attention } = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { attention: true } });
     await transition(tx, job.shop, quoteId, "send", "SENT", {
       attention: withoutItems(attention, ["INVOICE_FAILED"]) ?? Prisma.DbNull,
+      invoiceUrl,
     });
     await audit(tx, system(job.shop, "send-invoice"), quoteId, "quote.sent", { versionId: job.versionId });
   });

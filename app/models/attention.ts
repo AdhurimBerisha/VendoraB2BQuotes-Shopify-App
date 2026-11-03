@@ -33,16 +33,5 @@ const withoutItems = (current: unknown, codes: AttentionCode[]): AttentionItem[]
   return left.length ? left : null;
 };
 
-const raise = async (
-  tx: Prisma.TransactionClient,
-  shop: string,
-  quoteId: string,
-  item: Omit<AttentionItem, "at">,
-) => {
-  const quote = await tx.quote.findFirstOrThrow({ where: { id: quoteId, shop }, select: { attention: true } });
-  await tx.quote.update({ where: { id: quoteId }, data: { attention: withItem(quote.attention, item) } });
-  console.log("attention raised", { shop, quoteId, code: item.code });
-};
-
-export { attentionItems, raise, withItem, withoutItems };
+export { attentionItems, withItem, withoutItems };
 export type { AttentionCode, AttentionItem };

@@ -1,6 +1,7 @@
 import type { Session } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
-import { NotFoundError, UserError } from "../lib/errors";
+import { EMAIL_TYPES, type EmailType } from "../emails/templates";
+import { ForbiddenError, NotFoundError, UserError } from "../lib/errors";
 import type { Role, StaffActor } from "./actor";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
@@ -56,4 +57,39 @@ const setRole = async (actor: StaffActor, staffId: string, role: Role) => {
   });
 };
 
-export { listStaff, setRole, upsertStaffFromSession };
+// Settings → Notifications: each staff member sets only their own. Missing = on.
+type NotificationPrefs = Record<EmailType, boolean>;
+
+const getNotificationPrefs = async (actor: StaffActor) => {
+  const member =
+    actor.userId === null
+      ? null
+      : await db.staffMember.findUnique({
+          where: { shop_shopifyUserId: { shop: actor.shop, shopifyUserId: actor.userId } },
+          select: { email: true, notificationPrefs: true },
+        });
+  const saved = (member?.notificationPrefs ?? {}) as Record<string, unknown>;
+  const prefs = Object.fromEntries(EMAIL_TYPES.map((type) => [type, saved[type] !== false])) as NotificationPrefs;
+  return { email: member?.email ?? null, prefs };
+};
+
+const notificationPrefsFromForm = (form: FormData): NotificationPrefs =>
+  Object.fromEntries(EMAIL_TYPES.map((type) => [type, form.get(type) === "on"])) as NotificationPrefs;
+
+const saveNotificationPrefs = async (actor: StaffActor, prefs: NotificationPrefs) => {
+  if (actor.userId === null) throw new ForbiddenError();
+  await db.staffMember.update({
+    where: { shop_shopifyUserId: { shop: actor.shop, shopifyUserId: actor.userId } },
+    data: { notificationPrefs: prefs },
+  });
+  console.log("notification prefs saved", { shop: actor.shop, off: EMAIL_TYPES.filter((type) => !prefs[type]) });
+};
+
+export {
+  getNotificationPrefs,
+  listStaff,
+  notificationPrefsFromForm,
+  saveNotificationPrefs,
+  setRole,
+  upsertStaffFromSession,
+};
