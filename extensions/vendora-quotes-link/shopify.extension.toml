@@ -1,0 +1,13 @@
+api_version = "2026-10"
+
+# Block on the Orders page linking to the full "Quotes" page (extension vendora-customer-quotes).
+# Separate extension: a full-page target can't share an extension with other targets.
+[[extensions]]
+type = "ui_extension"
+name = "Quotes link"
+handle = "vendora-quotes-link"
+uid = "de8b8325-6aa2-4db8-057c-c36cb5cb73bcfb49dfae"
+
+  [[extensions.targeting]]
+  target = "customer-account.order-index.block.render"
+  module = "./src/QuotesLink.tsx"
