@@ -3,6 +3,7 @@ import { ConflictError, ForbiddenError, NotFoundError, UserError } from "../lib/
 import type { StaffActor } from "./actor";
 import { type ApprovalRules, approvalReasons, approvalRulesSchema, parseRules } from "./approval";
 import { audit } from "./audit.server";
+import { notify } from "./notify.server";
 import { requirePermission } from "./permissions";
 import { BLOCKING, type LineProblem, discountPctOf } from "./pricing";
 import { transition } from "./quote.server";
@@ -48,6 +49,13 @@ const submitQuote = async (actor: StaffActor, quoteId: string) => {
     return { needsApproval, reasons };
   });
   console.log("quote submitted", { shop: actor.shop, quoteId, ...result });
+  if (result.needsApproval) {
+    await notify(db, actor.shop, "approvalNeeded", { kind: "managers", except: actor.userId }, {
+      quoteId,
+      actor: actor.name,
+      reasons: result.reasons,
+    });
+  }
   return result;
 };
 
@@ -62,7 +70,7 @@ const decide = async (
   const trimmed = comment?.trim() || null;
   if (decision === "REJECTED" && !trimmed) throw new UserError("approval.errors.commentRequired");
 
-  await db.$transaction(async (tx) => {
+  const requestedBy = await db.$transaction(async (tx) => {
     const quote = await tx.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
     if (!quote?.currentVersionId) throw new NotFoundError();
     const approval = await tx.approval.findFirst({
@@ -89,8 +97,14 @@ const decide = async (
       where: { id: approval.id },
       data: { decision, decidedBy: actor.userId, comment: trimmed, decidedAt: new Date() },
     });
+    return approval.requestedBy;
   });
   console.log("approval decided", { shop: actor.shop, quoteId, decision });
+  await notify(db, actor.shop, decision === "APPROVED" ? "approved" : "rejected", { kind: "user", userId: requestedBy }, {
+    quoteId,
+    actor: actor.name,
+    comment: trimmed ?? undefined,
+  });
 };
 
 // Settings → Approval rules.

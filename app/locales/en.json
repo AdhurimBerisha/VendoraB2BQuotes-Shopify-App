@@ -355,6 +355,21 @@
   },
   "settings": {
     "title": "Settings",
+    "notifications": {
+      "title": "Notifications",
+      "help": "Emails go to {{email}}. Choose which ones you get.",
+      "noEmail": "Shopify hasn't shared a verified email address for you, so you won't get emails. Verify your email in your Shopify account.",
+      "save": "Save notifications",
+      "types": {
+        "approvalNeeded": "A quote needs my approval",
+        "approved": "My quote was approved",
+        "rejected": "My quote was rejected",
+        "quoteViewed": "A buyer opened my quote",
+        "quoteOrdered": "A buyer ordered my quote",
+        "expiringSoon": "My quote expires in 3 days",
+        "needsAttention": "A quote needs attention (managers)"
+      }
+    },
     "errors": {
       "numberTooLow": "The next quote number can't be lower than {{min}}.",
       "prefix": "Use 1–8 capital letters, digits or dashes.",
@@ -407,7 +422,17 @@
       "save": "Save approval rules"
     }
   },
-  "email": { "viewQuote": "View your quote and download the PDF" },
+  "email": {
+    "viewQuote": "View your quote and download the PDF",
+    "footer": "You're receiving this because you use Vendora in {{shopName}}. Turn emails off in Vendora → Settings → Notifications.",
+    "approvalNeeded": { "subject": "Approval needed: {{quoteLabel}}", "body": "{{actor}} submitted {{quoteLabel}} for approval. Reasons: {{reasons}}.", "action": "Review quote" },
+    "approved": { "subject": "Approved: {{quoteLabel}}", "body": "{{actor}} approved {{quoteLabel}}. You can send it to the buyer now.", "action": "Open quote" },
+    "rejected": { "subject": "Changes needed: {{quoteLabel}}", "body": "{{actor}} rejected {{quoteLabel}}. It is back in draft for your changes.", "action": "Open quote" },
+    "quoteViewed": { "subject": "Viewed: {{quoteLabel}}", "body": "The buyer opened {{quoteLabel}}.", "action": "Open quote" },
+    "quoteOrdered": { "subject": "Ordered: {{quoteLabel}}", "body": "The buyer completed checkout for {{quoteLabel}}.", "action": "Open quote" },
+    "expiringSoon": { "subject": "Expires {{date}}: {{quoteLabel}}", "body": "{{quoteLabel}} expires on {{date}}. Extend the date or follow up with the buyer.", "action": "Open quote" },
+    "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" }
+  },
   "publicQuote": {
     "title": "Quote {{number}} – version {{version}}",
     "skip": "Skip to quote",

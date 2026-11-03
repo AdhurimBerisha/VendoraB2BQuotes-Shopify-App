@@ -2,6 +2,7 @@ import db from "../db.server";
 import { clientIp, rateLimit } from "../lib/rate-limit.server";
 import { verifyQuoteToken } from "../lib/signed-token.server";
 import { audit } from "./audit.server";
+import { notify } from "./notify.server";
 
 // Headers for every /q/* response: not indexed, the token never leaks in a Referer, not cached.
 const PUBLIC_HEADERS = {
@@ -44,8 +45,11 @@ const findPublicQuote = async (request: Request, token: string) => {
   return { quote, version, shop, superseded };
 };
 
-// One "viewed" event per quote per day.
-const recordView = async (quote: { id: string; shop: string; contactCustomerId: string | null }, version: number) => {
+// One "viewed" event (and email to the rep) per quote per day.
+const recordView = async (
+  quote: { id: string; shop: string; contactCustomerId: string | null; assignedToUserId: bigint | null },
+  version: number,
+) => {
   const since = new Date(Date.now() - 86_400_000);
   const seen = await db.auditEvent.findFirst({
     where: { shop: quote.shop, quoteId: quote.id, action: "quote.viewed", createdAt: { gte: since } },
@@ -54,6 +58,7 @@ const recordView = async (quote: { id: string; shop: string; contactCustomerId: 
   if (seen) return;
   const actor = { type: "CUSTOMER" as const, shop: quote.shop, customerId: quote.contactCustomerId ?? "unknown" };
   await audit(db, actor, quote.id, "quote.viewed", { version });
+  await notify(db, quote.shop, "quoteViewed", { kind: "user", userId: quote.assignedToUserId }, { quoteId: quote.id });
 };
 
 export { PUBLIC_HEADERS, findPublicQuote, notFound, recordView };

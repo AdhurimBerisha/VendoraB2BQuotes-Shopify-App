@@ -14,21 +14,21 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
@@ -144,6 +144,7 @@ model AuditEvent {
 model Shop {
   id                String    @id // "abc.myshopify.com"
   shopGid           String? // gid://shopify/Shop/123
+  name              String? // shop.name, for email footers (M3.3)
   installedAt       DateTime  @default(now())
   uninstalledAt     DateTime?
   timezone          String    @default("UTC") // shop.ianaTimezone
@@ -163,15 +164,16 @@ model Shop {
 
 // One row per Shopify staff member who has opened the app (from their online session).
 model StaffMember {
-  id            String   @id @default(cuid())
-  shop          String
-  shopifyUserId BigInt
-  displayName   String
-  email         String? // only when Shopify says it's verified
-  role          String   @default("REP") // Role in app/models/actor.ts; set on first visit, then only via Settings → Team (M2.4)
-  locale        String   @default("en")
-  lastSeenAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
+  id                String   @id @default(cuid())
+  shop              String
+  shopifyUserId     BigInt
+  displayName       String
+  email             String? // only when Shopify says it's verified
+  role              String   @default("REP") // Role in app/models/actor.ts; set on first visit, then only via Settings → Team (M2.4)
+  locale            String   @default("en")
+  notificationPrefs Json     @default("{}") // { [EmailType]: false } turns one email off; missing = on (M3.3)
+  lastSeenAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   @@unique([shop, shopifyUserId])
 }
