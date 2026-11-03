@@ -55,6 +55,7 @@ model Quote {
   syncedVersionId      String?
   invoiceSentVersionId String?
   invoiceRequestedAt   DateTime? // when we last asked Shopify to send the invoice (dedupe + verify)
+  invoiceUrl           String? // Shopify checkout link of the sent draft order (public quote page, M3.2)
   shopifyUpdatedAt     DateTime?
   orderId              String?
   attention            Json?

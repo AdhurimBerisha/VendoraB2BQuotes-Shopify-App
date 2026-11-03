@@ -406,5 +406,17 @@
       "differentApprover": "The approver must be a different person than the requester",
       "save": "Save approval rules"
     }
+  },
+  "email": { "viewQuote": "View your quote and download the PDF" },
+  "publicQuote": {
+    "title": "Quote {{number}} – version {{version}}",
+    "skip": "Skip to quote",
+    "superseded": "This quote was updated. Check your email for the latest version.",
+    "validUntil": "Valid until {{date}}",
+    "linesCaption": "Quote lines",
+    "total": "Total (excl. tax and shipping)",
+    "note": "Note",
+    "downloadPdf": "Download PDF",
+    "accept": "Review and accept"
   }
 }
