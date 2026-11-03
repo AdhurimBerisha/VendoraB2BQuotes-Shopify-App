@@ -1,7 +1,5 @@
 {
   "title": "Quotes",
-  "intro": "View and respond to quotes from us.",
-  "viewQuotes": "View quotes",
   "loading": "Loading quotes",
   "loadError": "We couldn't load your quotes. Try again later.",
   "empty": "You have no quotes yet.",
