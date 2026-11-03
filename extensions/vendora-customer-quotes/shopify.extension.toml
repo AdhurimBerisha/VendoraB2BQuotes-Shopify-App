@@ -1,0 +1,20 @@
+api_version = "2026-10"
+
+[[extensions]]
+type = "ui_extension"
+name = "Quotes"
+handle = "vendora-customer-quotes"
+
+  # Full page: the buyer's company quotes (accept, decline, request changes).
+  [[extensions.targeting]]
+  target = "customer-account.page.render"
+  module = "./src/QuotesPage.tsx"
+
+  # Block on the Orders page linking to the full page.
+  [[extensions.targeting]]
+  target = "customer-account.order-index.block.render"
+  module = "./src/QuotesLink.tsx"
+
+  [extensions.capabilities]
+  api_access = true
+  network_access = true

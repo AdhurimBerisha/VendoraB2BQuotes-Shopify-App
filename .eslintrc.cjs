@@ -19,7 +19,7 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  ignorePatterns: ["!**/.server", "!**/.client", "app/types/"], // app/types: GraphQL codegen output
+  ignorePatterns: ["!**/.server", "!**/.client", "app/types/", "extensions/*/shopify.d.ts"], // codegen / Shopify CLI output
 
   // Base config
   extends: ["eslint:recommended"],

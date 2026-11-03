@@ -72,4 +72,19 @@ const companyNames = async (admin: AdminApiContext, ids: string[]) => {
   return names;
 };
 
-export { companyNames, getCompanyLocation, getContact, searchCompanies };
+// The companies a logged-in buyer is a contact of (customer account page, M3.4).
+const companyIdsForCustomer = async (admin: AdminApiContext, customerId: string): Promise<string[]> => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraCustomerCompanies($id: ID!) {
+        customer(id: $id) { companyContactProfiles { id company { id } } }
+      }`,
+      { variables: { id: customerId } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.customer?.companyContactProfiles.map((profile) => profile.company.id) ?? [];
+};
+
+export { companyIdsForCustomer, companyNames, getCompanyLocation, getContact, searchCompanies };

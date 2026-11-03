@@ -1,8 +1,10 @@
+import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { D, type Money } from "../lib/money";
 import { getVariantPrices, type VariantPrice } from "../shopify/products.server";
 import type { StaffActor } from "./actor";
+import { withoutItems } from "./attention";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { type LineProblem, type PricedLine, lineTotal, quantityProblems, totals } from "./pricing";
@@ -214,7 +216,12 @@ const reviseQuote = async (actor: StaffActor, quoteId: string) => {
     });
     await tx.quote.update({
       where: { id: quoteId },
-      data: { currentVersionId: next.id, lockVersion: { increment: 1 } },
+      data: {
+        currentVersionId: next.id,
+        lockVersion: { increment: 1 },
+        // The new version answers the buyer's change request.
+        attention: withoutItems(quote.attention, ["CHANGES_REQUESTED"]) ?? Prisma.DbNull,
+      },
     });
     await audit(tx, actor, quoteId, "quote.revised", { from: old.versionNumber, to: next.versionNumber });
     return next;
