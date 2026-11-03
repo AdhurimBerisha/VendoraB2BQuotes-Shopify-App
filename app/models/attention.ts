@@ -10,7 +10,8 @@ type AttentionCode =
   | "PRODUCT_NOT_ACTIVE"
   | "PRICE_MISMATCH"
   | "INVOICE_FAILED"
-  | "ORDER_ON_CLOSED_QUOTE";
+  | "ORDER_ON_CLOSED_QUOTE"
+  | "CHANGES_REQUESTED"; // the buyer asked for changes (M3.4); cleared when a new version starts
 type AttentionItem = {
   code: AttentionCode;
   message?: string;

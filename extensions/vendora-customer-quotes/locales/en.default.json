@@ -1,0 +1,27 @@
+{
+  "title": "Quotes",
+  "intro": "View and respond to quotes from us.",
+  "viewQuotes": "View quotes",
+  "loading": "Loading quotes",
+  "loadError": "We couldn't load your quotes. Try again later.",
+  "empty": "You have no quotes yet.",
+  "validUntil": "Valid until {{date}}",
+  "accept": "Review and accept",
+  "downloadPdf": "Download PDF",
+  "requestChanges": "Request changes",
+  "decline": "Decline",
+  "declineTitle": "Decline this quote",
+  "reason": "Reason (required)",
+  "changesTitle": "Request changes",
+  "whatToChange": "What should we change?",
+  "send": "Send",
+  "declined": "Quote declined",
+  "changesSent": "Request sent",
+  "actionError": "That didn't work. Try again.",
+  "status": {
+    "SENT": "Awaiting your response",
+    "ORDERED": "Ordered",
+    "DECLINED": "Declined",
+    "EXPIRED": "Expired"
+  }
+}

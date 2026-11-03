@@ -50,6 +50,16 @@ export type VendoraCompanyNamesQueryVariables = AdminTypes.Exact<{
 
 export type VendoraCompanyNamesQuery = { nodes: Array<AdminTypes.Maybe<Pick<AdminTypes.Company, 'id' | 'name'>>> };
 
+export type VendoraCustomerCompaniesQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraCustomerCompaniesQuery = { customer?: AdminTypes.Maybe<{ companyContactProfiles: Array<(
+      Pick<AdminTypes.CompanyContact, 'id'>
+      & { company: Pick<AdminTypes.Company, 'id'> }
+    )> }> };
+
 export type VendoraDraftOrderCreateMutationVariables = AdminTypes.Exact<{
   input: AdminTypes.DraftOrderInput;
 }>;
@@ -152,6 +162,7 @@ interface GeneratedQueryTypes {
   "#graphql\n      query VendoraCompanySearch($query: String, $after: String) {\n        companies(first: 20, after: $after, query: $query, sortKey: NAME) {\n          nodes { id name mainContact { id } locations(first: 50) { nodes { id name currency } } }\n          pageInfo { hasNextPage endCursor }\n        }\n      }": {return: VendoraCompanySearchQuery, variables: VendoraCompanySearchQueryVariables},
   "#graphql\n      query VendoraContact($id: ID!) {\n        companyContact(id: $id) { id customer { id displayName defaultEmailAddress { emailAddress } } }\n      }": {return: VendoraContactQuery, variables: VendoraContactQueryVariables},
   "#graphql\n      query VendoraCompanyNames($ids: [ID!]!) {\n        nodes(ids: $ids) { ... on Company { id name } }\n      }": {return: VendoraCompanyNamesQuery, variables: VendoraCompanyNamesQueryVariables},
+  "#graphql\n      query VendoraCustomerCompanies($id: ID!) {\n        customer(id: $id) { companyContactProfiles { id company { id } } }\n      }": {return: VendoraCustomerCompaniesQuery, variables: VendoraCustomerCompaniesQueryVariables},
   "#graphql\n      query VendoraDraftOrderByTag($query: String!) {\n        draftOrders(first: 5, query: $query) {\n          nodes { id status purchasingEntity { ... on PurchasingCompany { company { id } location { id } } } }\n        }\n      }": {return: VendoraDraftOrderByTagQuery, variables: VendoraDraftOrderByTagQueryVariables},
   "#graphql\n      query VendoraDraftOrder($id: ID!) {\n        draftOrder(id: $id) {\n          id status updatedAt invoiceSentAt invoiceUrl\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n        }\n      }": {return: VendoraDraftOrderQuery, variables: VendoraDraftOrderQueryVariables},
   "#graphql\n      query VendoraDraftOrderSummary($id: ID!) {\n        draftOrder(id: $id) {\n          id status invoiceSentAt invoiceUrl\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n          totalTaxSet { presentmentMoney { amount } }\n          totalPriceSet { presentmentMoney { amount } }\n          order { id name }\n        }\n      }": {return: VendoraDraftOrderSummaryQuery, variables: VendoraDraftOrderSummaryQueryVariables},

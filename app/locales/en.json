@@ -197,7 +197,9 @@
       "cancelled": "cancelled the quote",
       "expired": "the quote expired",
       "expiry_changed": "changed the expiry date",
-      "expiry_reminded": "sent the expiry reminder"
+      "expiry_reminded": "sent the expiry reminder",
+      "declined": "the buyer declined the quote",
+      "changes_requested": "the buyer asked for changes"
     },
     "sync": {
       "requested": "asked to sync with Shopify",
@@ -255,7 +257,8 @@
     "PRODUCT_NOT_ACTIVE": "A product in this quote isn't active any more.",
     "PRICE_MISMATCH": "Shopify's subtotal differs from the quote, so the invoice wasn't sent.",
     "INVOICE_FAILED": "The invoice couldn't be sent: {{message}}",
-    "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed."
+    "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed.",
+    "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}"
   },
   "import": {
     "title": "Import lines into {{label}}",
@@ -367,7 +370,9 @@
         "quoteViewed": "A buyer opened my quote",
         "quoteOrdered": "A buyer ordered my quote",
         "expiringSoon": "My quote expires in 3 days",
-        "needsAttention": "A quote needs attention (managers)"
+        "needsAttention": "A quote needs attention (managers)",
+        "quoteDeclined": "A buyer declined my quote",
+        "changesRequested": "A buyer asked for changes to my quote"
       }
     },
     "errors": {
@@ -431,7 +436,9 @@
     "quoteViewed": { "subject": "Viewed: {{quoteLabel}}", "body": "The buyer opened {{quoteLabel}}.", "action": "Open quote" },
     "quoteOrdered": { "subject": "Ordered: {{quoteLabel}}", "body": "The buyer completed checkout for {{quoteLabel}}.", "action": "Open quote" },
     "expiringSoon": { "subject": "Expires {{date}}: {{quoteLabel}}", "body": "{{quoteLabel}} expires on {{date}}. Extend the date or follow up with the buyer.", "action": "Open quote" },
-    "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" }
+    "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" },
+    "quoteDeclined": { "subject": "Declined: {{quoteLabel}}", "body": "The buyer declined {{quoteLabel}}. Their reason:", "action": "Open quote" },
+    "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" }
   },
   "publicQuote": {
     "title": "Quote {{number}} – version {{version}}",

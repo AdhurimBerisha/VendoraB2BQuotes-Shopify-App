@@ -9,6 +9,8 @@ const EMAIL_TYPES = [
   "quoteOrdered",
   "expiringSoon",
   "needsAttention",
+  "quoteDeclined",
+  "changesRequested",
 ] as const;
 type EmailType = (typeof EMAIL_TYPES)[number];
 
