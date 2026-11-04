@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 
-// Things on a quote a human must look at (Quote.attention). M4.2 adds the resolve actions.
+// Things on a quote a human must look at (Quote.attention). Resolve actions: attention.server.ts.
 type AttentionCode =
   | "SYNC_FAILED"
   | "TAG_COLLISION"
@@ -11,13 +11,33 @@ type AttentionCode =
   | "PRICE_MISMATCH"
   | "INVOICE_FAILED"
   | "ORDER_ON_CLOSED_QUOTE"
-  | "CHANGES_REQUESTED"; // the buyer asked for changes (M3.4); cleared when a new version starts
+  | "CHANGES_REQUESTED" // the buyer asked for changes (M3.4); cleared when a new version starts
+  | "RETRIES_EXHAUSTED" // a background sync failed every retry (M4.2)
+  | "OUT_OF_STOCK"; // the nightly check found less stock than a sent quote's quantities (M4.3)
 type AttentionItem = {
   code: AttentionCode;
   message?: string;
   data?: Record<string, Prisma.InputJsonValue>;
   at: string;
 };
+
+// What a person can do about each item (M4.2). The first action is the suggested one.
+const ATTENTION_ACTIONS = {
+  SYNC_FAILED: ["retry"],
+  RETRIES_EXHAUSTED: ["retry"],
+  // Only a new draft: the tagged ones belong to another company (B-1), so never adopt them.
+  TAG_COLLISION: ["createNew"],
+  DRAFT_DELETED: ["recreate", "cancel"],
+  CHANGED_IN_SHOPIFY: ["overwrite", "acceptShopify"],
+  PRODUCT_DELETED: ["editQuote"],
+  PRODUCT_NOT_ACTIVE: ["editQuote"],
+  PRICE_MISMATCH: ["dismiss"],
+  CHANGES_REQUESTED: ["revise"],
+  INVOICE_FAILED: ["retrySend"],
+  ORDER_ON_CLOSED_QUOTE: ["dismiss"],
+  OUT_OF_STOCK: ["dismiss", "revise"],
+} as const satisfies Record<AttentionCode, readonly string[]>;
+type AttentionAction = (typeof ATTENTION_ACTIONS)[AttentionCode][number];
 
 const attentionItems = (current: unknown): AttentionItem[] =>
   Array.isArray(current) ? (current as AttentionItem[]) : [];
@@ -34,5 +54,5 @@ const withoutItems = (current: unknown, codes: AttentionCode[]): AttentionItem[]
   return left.length ? left : null;
 };
 
-export { attentionItems, withItem, withoutItems };
-export type { AttentionCode, AttentionItem };
+export { ATTENTION_ACTIONS, attentionItems, withItem, withoutItems };
+export type { AttentionAction, AttentionCode, AttentionItem };

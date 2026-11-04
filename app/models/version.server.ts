@@ -37,24 +37,16 @@ const lineProblems = (
 const lineTitle = (price: VariantPrice) =>
   price.title === "Default Title" ? price.productTitle : `${price.productTitle} – ${price.title}`;
 
-// Replaces all lines of the current (unlocked) version. Optimistic lock on Quote.lockVersion:
-// pass the lockVersion the page loaded; a stale one means someone else saved first.
-const saveDraftLines = async (
-  actor: StaffActor,
-  quoteId: string,
-  lockVersion: number,
+// Prices lines at the company location (Shopify, so call it outside any transaction).
+const priceLines = async (
+  admin: StaffActor["admin"],
+  companyLocationId: string,
+  currency: string,
   input: DraftLineInput[],
   quoteDiscountPct: Money | null,
 ) => {
-  requirePermission(actor, "quote.edit");
-  const found = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
-  if (!found) throw new NotFoundError();
-  const currency = found.currencyCode;
-
-  // Shopify first, outside the transaction, so a slow API call doesn't hold database locks.
   const variantIds = [...new Set(input.map((line) => line.variantId))];
-  const prices = await getVariantPrices(actor.admin, variantIds, found.companyLocationId);
-
+  const prices = await getVariantPrices(admin, variantIds, companyLocationId);
   const lines = input.map((line) => {
     const price = prices.get(line.variantId);
     if (!price) throw new UserError("quote.errors.variantNotFound", { variantId: line.variantId });
@@ -70,7 +62,49 @@ const saveDraftLines = async (
     };
     return { price, priced, problems: lineProblems(price, line.quantity, currency) };
   });
-  const quoteTotals = totals(lines.map((line) => line.priced), quoteDiscountPct, currency);
+  return { lines, totals: totals(lines.map((line) => line.priced), quoteDiscountPct, currency) };
+};
+type PricedLines = Awaited<ReturnType<typeof priceLines>>;
+
+// QuoteLine rows for one version.
+const lineRows = (versionId: string, lines: PricedLines["lines"], currency: string) =>
+  lines.map(({ price, priced, problems }, index) => ({
+    versionId,
+    position: index,
+    variantId: price.id,
+    productId: price.productId,
+    sku: price.sku,
+    titleSnapshot: lineTitle(price),
+    quantity: priced.quantity,
+    catalogPrice: priced.catalogPrice,
+    overridePrice: priced.overridePrice,
+    discountPct: priced.discountPct,
+    lineTotal: lineTotal(priced, currency),
+    problems: problems.length ? problems : undefined,
+  }));
+
+// Replaces all lines of the current (unlocked) version. Optimistic lock on Quote.lockVersion:
+// pass the lockVersion the page loaded; a stale one means someone else saved first.
+const saveDraftLines = async (
+  actor: StaffActor,
+  quoteId: string,
+  lockVersion: number,
+  input: DraftLineInput[],
+  quoteDiscountPct: Money | null,
+) => {
+  requirePermission(actor, "quote.edit");
+  const found = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
+  if (!found) throw new NotFoundError();
+  const currency = found.currencyCode;
+
+  // Shopify first, outside the transaction, so a slow API call doesn't hold database locks.
+  const { lines, totals: quoteTotals } = await priceLines(
+    actor.admin,
+    found.companyLocationId,
+    currency,
+    input,
+    quoteDiscountPct,
+  );
   console.log("draft lines priced", {
     quoteId,
     lines: lines.length,
@@ -94,22 +128,7 @@ const saveDraftLines = async (
 
     const version = quote.currentVersion;
     await tx.quoteLine.deleteMany({ where: { versionId: version.id } });
-    await tx.quoteLine.createMany({
-      data: lines.map(({ price, priced, problems }, index) => ({
-        versionId: version.id,
-        position: index,
-        variantId: price.id,
-        productId: price.productId,
-        sku: price.sku,
-        titleSnapshot: lineTitle(price),
-        quantity: priced.quantity,
-        catalogPrice: priced.catalogPrice,
-        overridePrice: priced.overridePrice,
-        discountPct: priced.discountPct,
-        lineTotal: lineTotal(priced, currency),
-        problems: problems.length ? problems : undefined,
-      })),
-    });
+    await tx.quoteLine.createMany({ data: lineRows(version.id, lines, currency) });
     await tx.quoteVersion.update({
       where: { id: version.id },
       data: {
@@ -270,5 +289,5 @@ const diffVersions = (before: { lines: DiffLine[] }, after: { lines: DiffLine[] 
   return diffs;
 };
 
-export { diffVersions, refreshPrices, reviseQuote, saveDraftLines };
+export { diffVersions, lineProblems, lineRows, priceLines, refreshPrices, reviseQuote, saveDraftLines };
 export type { DraftLineInput, LineDiff };

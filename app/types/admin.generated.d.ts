@@ -60,6 +60,16 @@ export type VendoraCustomerCompaniesQuery = { customer?: AdminTypes.Maybe<{ comp
       & { company: Pick<AdminTypes.Company, 'id'> }
     )> }> };
 
+export type VendoraBuyerLocationsQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraBuyerLocationsQuery = { customer?: AdminTypes.Maybe<{ companyContactProfiles: Array<(
+      Pick<AdminTypes.CompanyContact, 'id'>
+      & { roleAssignments: { nodes: Array<{ companyLocation: Pick<AdminTypes.CompanyLocation, 'id'> }> } }
+    )> }> };
+
 export type VendoraDraftOrderCreateMutationVariables = AdminTypes.Exact<{
   input: AdminTypes.DraftOrderInput;
 }>;
@@ -103,6 +113,51 @@ export type VendoraDraftOrderQueryVariables = AdminTypes.Exact<{
 export type VendoraDraftOrderQuery = { draftOrder?: AdminTypes.Maybe<(
     Pick<AdminTypes.DraftOrder, 'id' | 'status' | 'updatedAt' | 'invoiceSentAt' | 'invoiceUrl'>
     & { subtotalPriceSet: { presentmentMoney: Pick<AdminTypes.MoneyV2, 'amount' | 'currencyCode'> } }
+  )> };
+
+export type VendoraSubmittedDraftQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraSubmittedDraftQuery = { draftOrder?: AdminTypes.Maybe<(
+    Pick<AdminTypes.DraftOrder, 'id' | 'tags'>
+    & { lineItems: { nodes: Array<(
+        Pick<AdminTypes.DraftOrderLineItem, 'quantity'>
+        & { variant?: AdminTypes.Maybe<Pick<AdminTypes.ProductVariant, 'id'>> }
+      )> }, purchasingEntity?: AdminTypes.Maybe<{ company: Pick<AdminTypes.Company, 'id'>, location: Pick<AdminTypes.CompanyLocation, 'id'>, contact?: AdminTypes.Maybe<(
+        Pick<AdminTypes.CompanyContact, 'id'>
+        & { customer: Pick<AdminTypes.Customer, 'id'> }
+      )> }> }
+  )> };
+
+export type VendoraTagsAddMutationVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+  tags: Array<AdminTypes.Scalars['String']['input']> | AdminTypes.Scalars['String']['input'];
+}>;
+
+
+export type VendoraTagsAddMutation = { tagsAdd?: AdminTypes.Maybe<{ userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
+
+export type VendoraTagsRemoveMutationVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+  tags: Array<AdminTypes.Scalars['String']['input']> | AdminTypes.Scalars['String']['input'];
+}>;
+
+
+export type VendoraTagsRemoveMutation = { tagsRemove?: AdminTypes.Maybe<{ userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
+
+export type VendoraReconcileDraftQueryVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+}>;
+
+
+export type VendoraReconcileDraftQuery = { draftOrder?: AdminTypes.Maybe<(
+    Pick<AdminTypes.DraftOrder, 'id' | 'status' | 'updatedAt'>
+    & { order?: AdminTypes.Maybe<Pick<AdminTypes.Order, 'id'>>, lineItems: { nodes: Array<(
+        Pick<AdminTypes.DraftOrderLineItem, 'quantity'>
+        & { variant?: AdminTypes.Maybe<Pick<AdminTypes.ProductVariant, 'id'>> }
+      )> } }
   )> };
 
 export type VendoraDraftOrderSummaryQueryVariables = AdminTypes.Exact<{
@@ -163,8 +218,11 @@ interface GeneratedQueryTypes {
   "#graphql\n      query VendoraContact($id: ID!) {\n        companyContact(id: $id) { id customer { id displayName defaultEmailAddress { emailAddress } } }\n      }": {return: VendoraContactQuery, variables: VendoraContactQueryVariables},
   "#graphql\n      query VendoraCompanyNames($ids: [ID!]!) {\n        nodes(ids: $ids) { ... on Company { id name } }\n      }": {return: VendoraCompanyNamesQuery, variables: VendoraCompanyNamesQueryVariables},
   "#graphql\n      query VendoraCustomerCompanies($id: ID!) {\n        customer(id: $id) { companyContactProfiles { id company { id } } }\n      }": {return: VendoraCustomerCompaniesQuery, variables: VendoraCustomerCompaniesQueryVariables},
+  "#graphql\n      query VendoraBuyerLocations($id: ID!) {\n        customer(id: $id) {\n          companyContactProfiles { id roleAssignments(first: 100) { nodes { companyLocation { id } } } }\n        }\n      }": {return: VendoraBuyerLocationsQuery, variables: VendoraBuyerLocationsQueryVariables},
   "#graphql\n      query VendoraDraftOrderByTag($query: String!) {\n        draftOrders(first: 5, query: $query) {\n          nodes { id status purchasingEntity { ... on PurchasingCompany { company { id } location { id } } } }\n        }\n      }": {return: VendoraDraftOrderByTagQuery, variables: VendoraDraftOrderByTagQueryVariables},
   "#graphql\n      query VendoraDraftOrder($id: ID!) {\n        draftOrder(id: $id) {\n          id status updatedAt invoiceSentAt invoiceUrl\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n        }\n      }": {return: VendoraDraftOrderQuery, variables: VendoraDraftOrderQueryVariables},
+  "#graphql\n      query VendoraSubmittedDraft($id: ID!) {\n        draftOrder(id: $id) {\n          id tags\n          lineItems(first: 250) { nodes { quantity variant { id } } }\n          purchasingEntity { ... on PurchasingCompany { company { id } location { id } contact { id customer { id } } } }\n        }\n      }": {return: VendoraSubmittedDraftQuery, variables: VendoraSubmittedDraftQueryVariables},
+  "#graphql\n      query VendoraReconcileDraft($id: ID!) {\n        draftOrder(id: $id) {\n          id status updatedAt\n          order { id }\n          lineItems(first: 250) { nodes { quantity variant { id } } }\n        }\n      }": {return: VendoraReconcileDraftQuery, variables: VendoraReconcileDraftQueryVariables},
   "#graphql\n      query VendoraDraftOrderSummary($id: ID!) {\n        draftOrder(id: $id) {\n          id status invoiceSentAt invoiceUrl\n          subtotalPriceSet { presentmentMoney { amount currencyCode } }\n          totalTaxSet { presentmentMoney { amount } }\n          totalPriceSet { presentmentMoney { amount } }\n          order { id name }\n        }\n      }": {return: VendoraDraftOrderSummaryQuery, variables: VendoraDraftOrderSummaryQueryVariables},
   "#graphql\n      query VendoraLocationCountry($id: ID!) {\n        companyLocation(id: $id) {\n          shippingAddress { countryCode }\n          billingAddress { countryCode }\n        }\n      }": {return: VendoraLocationCountryQuery, variables: VendoraLocationCountryQueryVariables},
   "#graphql\n        query VendoraVariantPrices($ids: [ID!]!, $companyLocationId: ID!, $country: CountryCode) {\n          nodes(ids: $ids) {\n            ... on ProductVariant {\n              id\n              sku\n              title\n              inventoryQuantity\n              inventoryItem { tracked }\n              product { id title status isGiftCard }\n              contextualPricing(context: { companyLocationId: $companyLocationId, country: $country }) {\n                price { amount currencyCode }\n                quantityRule { minimum maximum increment }\n                quantityPriceBreaks(first: 10) { nodes { minimumQuantity price { amount currencyCode } } }\n              }\n            }\n          }\n        }": {return: VendoraVariantPricesQuery, variables: VendoraVariantPricesQueryVariables},
@@ -176,6 +234,8 @@ interface GeneratedMutationTypes {
   "#graphql\n      mutation VendoraDraftOrderCreate($input: DraftOrderInput!) {\n        draftOrderCreate(input: $input) { draftOrder { id name updatedAt } userErrors { field message } }\n      }": {return: VendoraDraftOrderCreateMutation, variables: VendoraDraftOrderCreateMutationVariables},
   "#graphql\n      mutation VendoraDraftOrderUpdate($id: ID!, $input: DraftOrderInput!) {\n        draftOrderUpdate(id: $id, input: $input) { draftOrder { id name updatedAt } userErrors { field message } }\n      }": {return: VendoraDraftOrderUpdateMutation, variables: VendoraDraftOrderUpdateMutationVariables},
   "#graphql\n      mutation VendoraDraftOrderDelete($input: DraftOrderDeleteInput!) {\n        draftOrderDelete(input: $input) { deletedId userErrors { field message } }\n      }": {return: VendoraDraftOrderDeleteMutation, variables: VendoraDraftOrderDeleteMutationVariables},
+  "#graphql\n      mutation VendoraTagsAdd($id: ID!, $tags: [String!]!) {\n        tagsAdd(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsAddMutation, variables: VendoraTagsAddMutationVariables},
+  "#graphql\n      mutation VendoraTagsRemove($id: ID!, $tags: [String!]!) {\n        tagsRemove(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsRemoveMutation, variables: VendoraTagsRemoveMutationVariables},
   "#graphql\n      mutation VendoraInvoiceSend($id: ID!, $email: EmailInput) {\n        draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id invoiceSentAt invoiceUrl } userErrors { field message } }\n      }": {return: VendoraInvoiceSendMutation, variables: VendoraInvoiceSendMutationVariables},
 }
 declare module '@shopify/admin-api-client' {

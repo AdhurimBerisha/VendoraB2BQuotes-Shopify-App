@@ -46,6 +46,7 @@ const generalSettingsSchema = z.object({
   nextQuoteNumber: z.coerce.number().int().min(1).max(99_999_999),
   defaultExpiryDays: z.coerce.number().int().min(1).max(365),
   reserveInventory: z.boolean(),
+  importSubmittedDrafts: z.boolean(),
   notifyEmails: z.array(z.email()).max(20),
 });
 type GeneralSettings = z.infer<typeof generalSettingsSchema>;
@@ -56,6 +57,7 @@ const generalSettingsFromForm = (form: FormData): GeneralSettings =>
     nextQuoteNumber: form.get("nextQuoteNumber"),
     defaultExpiryDays: form.get("defaultExpiryDays"),
     reserveInventory: form.get("reserveInventory") === "on",
+    importSubmittedDrafts: form.get("importSubmittedDrafts") === "on",
     notifyEmails: String(form.get("notifyEmails") ?? "")
       .split(",")
       .map((email) => email.trim())

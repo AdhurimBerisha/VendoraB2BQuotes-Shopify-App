@@ -7,6 +7,8 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { createI18n, pickLocale } from "../lib/i18n";
 import { getActor } from "../models/actor.server";
+import { isDegraded } from "../models/health.server";
+import { can } from "../models/permissions";
 import { getShop, upsertShopOnInstall } from "../models/shop.server";
 
 // Records the staff member on every admin page load. Child loaders that need the role call getActor too
@@ -24,31 +26,47 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     // Admin language: ?locale= on the first load, else the staff member's saved locale.
     locale: pickLocale(new URL(request.url).searchParams.get("locale") ?? actor.locale),
+    showJobs: can(actor, "jobs.retry"),
+    // M4.2 degraded mode: nothing is blocked, jobs keep retrying; staff just know why it's slow.
+    degraded: { shopify: isDegraded("shopify"), email: isDegraded("email") },
   };
 };
 
 export default function App() {
-  const { apiKey, locale } = useLoaderData<typeof loader>();
+  const { apiKey, locale, showJobs, degraded } = useLoaderData<typeof loader>();
   const i18n = useMemo(() => createI18n(locale), [locale]);
 
   return (
     <AppProvider apiKey={apiKey}>
       <I18nextProvider i18n={i18n}>
-        <Nav />
+        <Nav showJobs={showJobs} />
+        <DegradedBanner degraded={degraded} />
         <Outlet />
       </I18nextProvider>
     </AppProvider>
   );
 }
 
-function Nav() {
+function Nav({ showJobs }: { showJobs: boolean }) {
   const { t } = useTranslation();
   return (
     <s-app-nav>
       <s-link href="/app">{t("nav.dashboard")}</s-link>
       <s-link href="/app/quotes">{t("nav.quotes")}</s-link>
+      {showJobs && <s-link href="/app/jobs">{t("nav.jobs")}</s-link>}
       <s-link href="/app/settings">{t("nav.settings")}</s-link>
     </s-app-nav>
+  );
+}
+
+function DegradedBanner({ degraded }: { degraded: { shopify: boolean; email: boolean } }) {
+  const { t } = useTranslation();
+  if (!degraded.shopify && !degraded.email) return null;
+  return (
+    <s-banner tone="warning">
+      {degraded.shopify && <s-paragraph>{t("degraded.shopify")}</s-paragraph>}
+      {degraded.email && <s-paragraph>{t("degraded.email")}</s-paragraph>}
+    </s-banner>
   );
 }
 

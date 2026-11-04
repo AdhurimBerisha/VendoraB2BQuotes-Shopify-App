@@ -181,6 +181,73 @@ const getDraftOrder = async (admin: AdminApiContext, id: string) => {
   return data?.draftOrder ?? null;
 };
 
+// A draft order made outside Vendora (e.g. a B2B checkout submitted for review, M3.5).
+const getSubmittedDraft = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraSubmittedDraft($id: ID!) {
+        draftOrder(id: $id) {
+          id tags
+          lineItems(first: 250) { nodes { quantity variant { id } } }
+          purchasingEntity { ... on PurchasingCompany { company { id } location { id } contact { id customer { id } } } }
+        }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.draftOrder ?? null;
+};
+
+const addDraftTags = async (admin: AdminApiContext, id: string, tags: string[]) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      mutation VendoraTagsAdd($id: ID!, $tags: [String!]!) {
+        tagsAdd(id: $id, tags: $tags) { userErrors { field message } }
+      }`,
+      { variables: { id, tags } },
+    ),
+  );
+  const { data } = await response.json();
+  throwOnUserErrors(data?.tagsAdd?.userErrors);
+};
+
+// TAG_COLLISION → "Create a new draft order": our tag comes off the other company's draft (M4.2).
+const removeDraftTags = async (admin: AdminApiContext, id: string, tags: string[]) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      mutation VendoraTagsRemove($id: ID!, $tags: [String!]!) {
+        tagsRemove(id: $id, tags: $tags) { userErrors { field message } }
+      }`,
+      { variables: { id, tags } },
+    ),
+  );
+  const { data } = await response.json();
+  throwOnUserErrors(data?.tagsRemove?.userErrors);
+};
+
+// The nightly reconcile (M4.3): state, order and lines, to catch webhooks we missed.
+const getDraftForReconcile = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraReconcileDraft($id: ID!) {
+        draftOrder(id: $id) {
+          id status updatedAt
+          order { id }
+          lineItems(first: 250) { nodes { quantity variant { id } } }
+        }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.draftOrder ?? null;
+};
+
 // What the quote page shows about the draft order: Shopify's final totals and the order.
 // Needs read_orders (order); kept apart from getDraftOrder so syncing never depends on it.
 const getDraftOrderSummary = async (admin: AdminApiContext, id: string) => {
@@ -223,13 +290,17 @@ const sendInvoice = async (
 };
 
 export {
+  addDraftTags,
   createDraftOrder,
   deleteDraftOrder,
   draftOrderInput,
   findDraftOrdersByTag,
   getDraftOrder,
+  getDraftForReconcile,
   getDraftOrderSummary,
+  getSubmittedDraft,
   quoteTag,
+  removeDraftTags,
   sendInvoice,
   toMailingAddress,
   updateDraftOrder,

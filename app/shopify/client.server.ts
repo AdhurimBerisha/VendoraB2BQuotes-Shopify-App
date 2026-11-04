@@ -1,3 +1,5 @@
+import { recordHealth } from "../models/health.server";
+
 // Shopify rejected the input; nothing was changed. Definite.
 class ShopifyUserErrors extends Error {
   constructor(public messages: string[]) {
@@ -26,7 +28,9 @@ type GraphqlErrorLike = { extensions?: { code?: string }; message?: string };
 //  - HttpRequestError: no response at all (network) → unclassified
 const call = async <T>(fn: () => Promise<T>): Promise<T> => {
   try {
-    return await fn();
+    const result = await fn();
+    recordHealth("shopify", true);
+    return result;
   } catch (error) {
     if (error instanceof Response) throw error; // re-auth / redirect from the library
     const graphQLErrors =
@@ -37,6 +41,7 @@ const call = async <T>(fn: () => Promise<T>): Promise<T> => {
     const message = error instanceof Error ? error.message : String(error);
     if (status === 429 || codes.includes("THROTTLED")) throw new ShopifyThrottled(message);
     if (codes.includes("ACCESS_DENIED")) throw new ShopifyDenied(message);
+    recordHealth("shopify", false); // degraded mode counts only outages, not our own mistakes
     console.warn("shopify call failed (unclassified)", { status, message });
     throw error;
   }

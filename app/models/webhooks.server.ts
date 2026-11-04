@@ -1,9 +1,14 @@
+import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
+import { unauthenticated } from "../shopify.server";
+import { addDraftTags, getSubmittedDraft, quoteTag } from "../shopify/draft-orders.server";
+import { getCompanyLocation } from "../shopify/companies.server";
 import type { WebhookActor } from "./actor";
 import { raise } from "./attention.server";
 import { notify } from "./notify.server";
 import { audit } from "./audit.server";
 import type { LineProblem } from "./pricing";
+import { createRequestedQuote } from "./quote-request.server";
 import { type QuoteStatus, transition } from "./quote.server";
 
 // Shopify webhook payloads (REST shape: numeric ids, snake_case), only the fields we read.
@@ -15,6 +20,9 @@ type DraftOrderPayload = {
   line_items: { variant_id: number | null; quantity: number }[];
 };
 type ProductPayload = { id: number; status?: string };
+type GetAdmin = (shop: string) => Promise<AdminApiContext>;
+
+const defaultGetAdmin: GetAdmin = async (shop) => (await unauthenticated.admin(shop)).admin;
 
 const ACTIVE: QuoteStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
 const gid = (type: string, id: number) => `gid://shopify/${type}/${id}`;
@@ -27,9 +35,11 @@ const linesKey = (lines: { variantId: string; quantity: number }[]) =>
     .sort()
     .join("|");
 
-const processWebhook = async (topic: string, shop: string, payload: unknown) => {
+const processWebhook = async (topic: string, shop: string, payload: unknown, getAdmin = defaultGetAdmin) => {
   console.log("processing webhook", { topic, shop });
   switch (topic) {
+    case "DRAFT_ORDERS_CREATE":
+      return onDraftCreate(shop, payload as { id: number; tags?: string }, getAdmin);
     case "DRAFT_ORDERS_UPDATE":
       return onDraftUpdate(shop, payload as DraftOrderPayload);
     case "DRAFT_ORDERS_DELETE":
@@ -98,6 +108,63 @@ const onDraftUpdate = async (shop: string, payload: DraftOrderPayload) => {
   });
 };
 
+// M3.5: a company draft order made outside Vendora (a B2B checkout submitted for review, or
+// one made in the Shopify admin) becomes a DRAFT quote, when Settings → General allows it.
+// The draft order stays the quote's draft order; later syncs overwrite it with the quote.
+const onDraftCreate = async (shop: string, payload: { id: number; tags?: string }, getAdmin: GetAdmin) => {
+  const isOurs = (tags: string[]) => tags.some((tag) => tag.trim().startsWith("vendora-quote-"));
+  if (isOurs((payload.tags ?? "").split(","))) return; // made by our own sync
+  const shopRow = await db.shop.findUnique({ where: { id: shop } });
+  if (!shopRow?.importSubmittedDrafts || shopRow.uninstalledAt) return;
+
+  const draftOrderId = gid("DraftOrder", payload.id);
+  const admin = await getAdmin(shop);
+  const draft = await getSubmittedDraft(admin, draftOrderId);
+  if (!draft || isOurs(draft.tags)) return;
+  const purchase = draft.purchasingEntity;
+  if (!purchase || !("company" in purchase)) {
+    console.log("draft order ignored: not a company purchase", { shop, draftOrderId });
+    return;
+  }
+
+  // A retry after the quote was saved but before the tag was added: only tag it.
+  const existing = await db.quote.findFirst({ where: { shop, draftOrderId }, select: { id: true } });
+  const quoteId = existing?.id ?? (await importDraft(admin, shop, draftOrderId, draft, purchase));
+  if (!quoteId) return;
+  await addDraftTags(admin, draftOrderId, [quoteTag(quoteId)]);
+};
+
+type SubmittedDraft = NonNullable<Awaited<ReturnType<typeof getSubmittedDraft>>>;
+type CompanyPurchase = Extract<NonNullable<SubmittedDraft["purchasingEntity"]>, { company: unknown }>;
+
+const importDraft = async (
+  admin: AdminApiContext,
+  shop: string,
+  draftOrderId: string,
+  draft: SubmittedDraft,
+  purchase: CompanyPurchase,
+) => {
+  const location = await getCompanyLocation(admin, purchase.location.id);
+  const contact = purchase.contact ?? location?.company.mainContact;
+  if (!location || !contact) {
+    console.warn("draft order ignored: location or contact missing", { shop, draftOrderId });
+    return null;
+  }
+  // Custom items (no variant) can't be quoted; the next sync drops them from the draft order.
+  const input = draft.lineItems.nodes.flatMap((line) =>
+    line.variant ? [{ variantId: line.variant.id, quantity: line.quantity }] : [],
+  );
+  const actor = webhookActor(shop, "draft_orders/create");
+  const skipped = draft.lineItems.nodes.length - input.length;
+  const quote = await createRequestedQuote(admin, shop, location, contact, input, {
+    kind: "draftOrder",
+    actor,
+    draftOrderId,
+    skipped,
+  });
+  return quote.id;
+};
+
 const onDraftDelete = async (shop: string, payload: { id: number }) => {
   const quote = await db.quote.findFirst({ where: { shop, draftOrderId: gid("DraftOrder", payload.id) } });
   // Cancelled quotes delete their own draft orders.
@@ -136,4 +203,4 @@ const onProductGone = async (
   console.log("product lines flagged", { shop, productId, code, lines: lines.length });
 };
 
-export { processWebhook };
+export { linesKey, processWebhook };

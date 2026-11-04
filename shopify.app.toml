@@ -7,7 +7,7 @@ name = "vendora"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,read_customers,write_draft_orders,read_inventory,read_orders"
+scopes = "read_products,read_customers,write_draft_orders,read_inventory,read_orders,write_app_proxy"
 
 [webhooks]
 api_version = "2026-10"
@@ -22,7 +22,7 @@ api_version = "2026-10"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/draft-orders"
-  topics = [ "draft_orders/update", "draft_orders/delete" ]
+  topics = [ "draft_orders/create", "draft_orders/update", "draft_orders/delete" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/products"
@@ -38,3 +38,9 @@ redirect_urls = [ "https://example.com/api/auth" ]
 [build]
 include_config_on_deploy = true
 automatically_update_urls_on_dev = true
+
+# M3.5 Option 2: the theme's "Request a quote" block posts to /apps/vendora/quote-request.
+[app_proxy]
+url = "/proxy"
+prefix = "apps"
+subpath = "vendora"

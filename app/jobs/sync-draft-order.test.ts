@@ -39,7 +39,8 @@ test("success: quote SYNCED with one draft order", async () => {
 });
 
 test("network error, then a retry after the stale window: SYNCED, still one create", async () => {
-  const shopify = fakeShopify({ crashAfterCreate: true });
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", "crashAfterCommit");
   const quote = await queuedQuote();
   const job = { shop: SHOP, quoteId: quote.id, op: "upsert" as const };
 
@@ -56,7 +57,8 @@ test("network error, then a retry after the stale window: SYNCED, still one crea
 });
 
 test("early retry throws SyncInFlight so pg-boss tries again later", async () => {
-  const shopify = fakeShopify({ crashAfterCreate: true });
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", "crashAfterCommit");
   const quote = await queuedQuote();
   const job = { shop: SHOP, quoteId: quote.id, op: "upsert" as const };
 

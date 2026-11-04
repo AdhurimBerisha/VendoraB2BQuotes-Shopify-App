@@ -1,4 +1,16 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
+import { graphqlError, httpError, networkError } from "./fake-errors";
+
+// What failNext can make an operation do (M4.1). The first five throw before anything happens;
+// userErrors rejects the input; crashAfterCommit applies the change, then loses the response.
+type Fault = "network" | "http500" | "http429" | "throttled" | "accessDenied" | "userErrors" | "crashAfterCommit";
+const THROWS: Partial<Record<Fault, () => Error>> = {
+  network: networkError,
+  http500: () => httpError(500),
+  http429: () => httpError(429),
+  throttled: () => graphqlError("THROTTLED"),
+  accessDenied: () => graphqlError("ACCESS_DENIED"),
+};
 
 // What companyLocation(id) returns: Snowdevil-like, with a main contact.
 const FAKE_LOCATION = {
@@ -64,6 +76,9 @@ type FakeDraft = {
   locationId: string;
   input: Record<string, unknown>;
   invoiceSentAt: string | null;
+  lines?: { variantId: string | null; quantity: number }[]; // a draft made outside Vendora (M3.5), or edited in Shopify
+  status?: "OPEN" | "INVOICE_SENT" | "COMPLETED";
+  orderId?: string;
 };
 
 const userErrorsJson = (field: string, messages: string[]) =>
@@ -72,31 +87,31 @@ const userErrorsJson = (field: string, messages: string[]) =>
   });
 
 // Fake Shopify Admin client: keeps its own draft orders so tag search, updates and invoices
-// behave like the real API, and counts calls. Grows into the fault-injection fake in M4.1.
+// behave like the real API, and counts calls. failNext(op, ...faults) makes the next calls of an
+// operation (by its GraphQL name, e.g. "VendoraDraftOrderCreate") fail, one fault per call.
 // `variants` (keyed by gid) answers price lookups; a gid not listed behaves like a deleted variant.
 // `subtotal` is what Shopify reports back for every draft order (testQuote's version total is 0).
 const fakeShopify = ({
-  crashAfterCreate = false,
-  crashAfterInvoice = false,
-  createErrors = [] as string[],
   location = FAKE_LOCATION as object,
   variants = {} as Record<string, FakeVariant>,
   subtotal = "0.00",
   contactEmail = "buyer@example.com" as string | null,
+  buyerLocations = ["gid://shopify/CompanyLocation/1"], // where the logged-in buyer holds a role (M3.5)
 } = {}) => {
   const drafts: FakeDraft[] = [];
   const calls = { create: 0, update: 0, delete: 0, invoice: 0, skuSearch: 0 };
+  const opCalls: Record<string, number> = {};
+  const faults: Record<string, Fault[]> = {};
   const find = (id: string) => drafts.find((draft) => draft.id === id);
   const now = () => new Date().toISOString();
 
-  const graphql = async (
+  const handle = async (
     query: string,
     // Optional like the real client: queries without variables pass no second argument.
     { variables }: { variables: any } = { variables: {} }, // eslint-disable-line @typescript-eslint/no-explicit-any
   ) => {
     if (query.includes("VendoraDraftOrderCreate")) {
       calls.create++;
-      if (createErrors.length) return userErrorsJson("draftOrderCreate", createErrors);
       await new Promise((resolve) => setTimeout(resolve, 10));
       const { purchasingCompany } = variables.input.purchasingEntity;
       const draft: FakeDraft = {
@@ -108,7 +123,6 @@ const fakeShopify = ({
         invoiceSentAt: null,
       };
       drafts.push(draft);
-      if (crashAfterCreate) throw new Error("socket hang up");
       return Response.json({
         data: { draftOrderCreate: { draftOrder: { id: draft.id, updatedAt: now() }, userErrors: [] } },
       });
@@ -155,12 +169,69 @@ const fakeShopify = ({
         },
       });
     }
+    if (query.includes("VendoraReconcileDraft")) {
+      const draft = find(variables.id);
+      const inputLines = (draft?.input.lineItems as { variantId: string; quantity: number }[] | undefined) ?? [];
+      return Response.json({
+        data: {
+          draftOrder: draft && {
+            id: draft.id,
+            status: draft.status ?? (draft.invoiceSentAt ? "INVOICE_SENT" : "OPEN"),
+            updatedAt: now(),
+            order: draft.orderId ? { id: draft.orderId } : null,
+            lineItems: {
+              nodes: (draft.lines ?? inputLines).map((line) => ({
+                quantity: line.quantity,
+                variant: line.variantId ? { id: line.variantId } : null,
+              })),
+            },
+          },
+        },
+      });
+    }
+    if (query.includes("VendoraSubmittedDraft")) {
+      const draft = find(variables.id);
+      return Response.json({
+        data: {
+          draftOrder: draft && {
+            id: draft.id,
+            tags: draft.tags,
+            lineItems: {
+              nodes: (draft.lines ?? []).map((line) => ({
+                quantity: line.quantity,
+                variant: line.variantId ? { id: line.variantId } : null,
+              })),
+            },
+            // An empty companyId stands for a consumer (non-company) draft order.
+            purchasingEntity: draft.companyId
+              ? { company: { id: draft.companyId }, location: { id: draft.locationId }, contact: null }
+              : { id: "gid://shopify/Customer/9" },
+          },
+        },
+      });
+    }
+    if (query.includes("VendoraBuyerLocations")) {
+      const roles = buyerLocations.map((id) => ({ companyLocation: { id } }));
+      const profiles = [{ id: "gid://shopify/CompanyContact/7", roleAssignments: { nodes: roles } }];
+      return Response.json({ data: { customer: { companyContactProfiles: profiles } } });
+    }
+    if (query.includes("VendoraTagsRemove")) {
+      const draft = find(variables.id);
+      if (!draft) return Response.json({ data: { tagsRemove: { userErrors: [{ field: null, message: "Not found" }] } } });
+      draft.tags = draft.tags.filter((tag) => !variables.tags.includes(tag));
+      return Response.json({ data: { tagsRemove: { userErrors: [] } } });
+    }
+    if (query.includes("VendoraTagsAdd")) {
+      const draft = find(variables.id);
+      if (!draft) return Response.json({ data: { tagsAdd: { userErrors: [{ field: null, message: "Not found" }] } } });
+      draft.tags = [...new Set([...draft.tags, ...variables.tags])];
+      return Response.json({ data: { tagsAdd: { userErrors: [] } } });
+    }
     if (query.includes("VendoraInvoiceSend")) {
       calls.invoice++;
       const draft = find(variables.id);
       if (!draft) return userErrorsJson("draftOrderInvoiceSend", ["Draft order does not exist"]);
       draft.invoiceSentAt = now();
-      if (crashAfterInvoice) throw new Error("socket hang up");
       return Response.json({
         data: { draftOrderInvoiceSend: { draftOrder: { id: draft.id, invoiceSentAt: draft.invoiceSentAt }, userErrors: [] } },
       });
@@ -199,8 +270,24 @@ const fakeShopify = ({
     throw new Error(`Unexpected query: ${query}`);
   };
 
+  const graphql: typeof handle = async (query, options) => {
+    const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "anonymous";
+    opCalls[op] = (opCalls[op] ?? 0) + 1;
+    const fault = faults[op]?.shift();
+    const thrown = fault && THROWS[fault];
+    if (thrown) throw thrown();
+    if (fault === "userErrors") {
+      if (op === "VendoraDraftOrderCreate") calls.create++;
+      // The mutation's root field, e.g. draftOrderCreate.
+      return userErrorsJson(/\{\s*(\w+)\(/.exec(query)?.[1] ?? op, ["Variant is invalid"]);
+    }
+    const response = await handle(query, options);
+    if (fault === "crashAfterCommit") throw networkError(); // Shopify did it; we never heard back
+    return response;
+  };
+
   // A draft order that already exists in Shopify (e.g. made by someone else, or by a crashed attempt).
-  const seedDraft = (draft: { tags: string[]; companyId: string; locationId: string }) => {
+  const seedDraft = (draft: Pick<FakeDraft, "tags" | "companyId" | "locationId" | "lines">) => {
     const seeded: FakeDraft = { id: `gid://shopify/DraftOrder/${drafts.length + 1}`, input: {}, invoiceSentAt: null, ...draft };
     drafts.push(seeded);
     return seeded;
@@ -211,9 +298,28 @@ const fakeShopify = ({
     drafts,
     calls,
     creates: () => calls.create,
+    callsOf: (op: string) => opCalls[op] ?? 0,
+    // Things done in Shopify that Vendora only hears about by webhook (or the nightly reconcile).
+    completeDraft: (id: string, orderId = "gid://shopify/Order/1") => {
+      const draft = find(id);
+      if (!draft) throw new Error(`no draft ${id}`);
+      Object.assign(draft, { status: "COMPLETED", orderId });
+    },
+    editDraftInShopify: (id: string, lines: { variantId: string; quantity: number }[]) => {
+      const draft = find(id);
+      if (!draft) throw new Error(`no draft ${id}`);
+      draft.lines = lines;
+    },
+    deleteDraftInShopify: (id: string) => {
+      const index = drafts.findIndex((draft) => draft.id === id);
+      if (index !== -1) drafts.splice(index, 1);
+    },
+    failNext: (op: string, ...next: Fault[]) => {
+      faults[op] = [...(faults[op] ?? []), ...next];
+    },
     seedDraft,
   };
 };
 
 export { FAKE_LOCATION, fakeShopify };
-export type { FakeVariant };
+export type { Fault, FakeVariant };

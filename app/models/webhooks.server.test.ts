@@ -176,3 +176,68 @@ test("products/update to archived → PRODUCT_NOT_ACTIVE; an active update chang
   const [line] = await db.quoteLine.findMany({ where: { versionId: quote.currentVersionId! } });
   expect(line.problems).toEqual(["PRODUCT_NOT_ACTIVE"]);
 });
+
+// M3.5: company draft orders made outside Vendora.
+const importOn = (on: boolean) => db.shop.update({ where: { id: SHOP }, data: { importSubmittedDrafts: on } });
+const draftNumber = (id: string) => Number(id.split("/").pop());
+const submitted = (fake: ReturnType<typeof fakeShopify>, companyId = "gid://shopify/Company/1", tags: string[] = []) =>
+  fake.seedDraft({
+    tags,
+    companyId,
+    locationId: "gid://shopify/CompanyLocation/1",
+    lines: [
+      { variantId: "gid://shopify/ProductVariant/11", quantity: 3 },
+      { variantId: "gid://shopify/ProductVariant/12", quantity: 5 },
+      { variantId: null, quantity: 1 }, // custom item: skipped
+    ],
+  });
+const variants = { "gid://shopify/ProductVariant/11": { price: "12.50" }, "gid://shopify/ProductVariant/12": { price: "4.00" } };
+
+test("draft_orders/create: a company draft becomes one DRAFT quote, tagged; a duplicate makes no second", async () => {
+  await importOn(true);
+  const fake = fakeShopify({ variants });
+  const draft = submitted(fake);
+  const getAdmin = async () => fake.admin;
+
+  await processWebhook("DRAFT_ORDERS_CREATE", SHOP, { id: draftNumber(draft.id), tags: "" }, getAdmin);
+  // A second delivery (or a retry) after the tag was added.
+  await processWebhook("DRAFT_ORDERS_CREATE", SHOP, { id: draftNumber(draft.id), tags: "" }, getAdmin);
+
+  const quotes = await db.quote.findMany({
+    where: { shop: SHOP, draftOrderId: draft.id },
+    include: { currentVersion: { include: { lines: { orderBy: { position: "asc" } } } } },
+  });
+  expect(quotes).toHaveLength(1);
+  const [quote] = quotes;
+  expect(quote.status).toBe("DRAFT");
+  expect(quote.syncStatus).toBe("SYNCED");
+  expect(quote.syncedVersionId).toBe(quote.currentVersionId);
+  expect(quote.assignedToUserId).toBeNull();
+  expect(quote.companyContactId).toBe("gid://shopify/CompanyContact/1"); // the main contact
+  expect(quote.currentVersion?.lines.map((line) => [line.variantId, line.quantity, line.lineTotal.toString()])).toEqual([
+    ["gid://shopify/ProductVariant/11", 3, "37.5"],
+    ["gid://shopify/ProductVariant/12", 5, "20"],
+  ]);
+  expect(quote.currentVersion?.total.toString()).toBe("57.5");
+  expect(draft.tags).toEqual([`vendora-quote-${quote.id}`]);
+  const audits = await db.auditEvent.findMany({ where: { quoteId: quote.id, action: "quote.created" } });
+  expect(audits).toHaveLength(1);
+  expect(audits[0].data).toMatchObject({ source: "storefront", skipped: 1 });
+});
+
+test("draft_orders/create ignores consumer drafts, our own drafts, and shops with the setting off", async () => {
+  const fake = fakeShopify({ variants });
+  const getAdmin = async () => fake.admin;
+  const before = await db.quote.count({ where: { shop: SHOP } });
+
+  await importOn(true);
+  const consumer = submitted(fake, "");
+  await processWebhook("DRAFT_ORDERS_CREATE", SHOP, { id: draftNumber(consumer.id), tags: "" }, getAdmin);
+  const ours = submitted(fake, "gid://shopify/Company/1", ["vendora-quote-abc"]);
+  await processWebhook("DRAFT_ORDERS_CREATE", SHOP, { id: draftNumber(ours.id), tags: "vendora-quote-abc" }, getAdmin);
+  await importOn(false);
+  const off = submitted(fake);
+  await processWebhook("DRAFT_ORDERS_CREATE", SHOP, { id: draftNumber(off.id), tags: "" }, getAdmin);
+
+  expect(await db.quote.count({ where: { shop: SHOP } })).toBe(before);
+});

@@ -1,5 +1,5 @@
 {
-  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "settings": "Settings" },
+  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "jobs": "Jobs", "settings": "Settings" },
   "common": { "save": "Save" },
   "roles": { "OWNER": "Owner", "MANAGER": "Manager", "REP": "Sales rep", "VIEWER": "Viewer" },
   "errors": {
@@ -207,9 +207,11 @@
       "adopted": "linked the existing draft order",
       "failed": "Shopify rejected the draft order",
       "tag_collision": "found another draft order with this quote's tag",
-      "deleted": "deleted the draft order"
+      "deleted": "deleted the draft order",
+      "gave_up": "stopped retrying the sync"
     },
-    "attention": { "raised": "flagged a problem" },
+    "attention": { "raised": "flagged a problem", "resolved": "resolved a problem" },
+    "job": { "retried": "retried failed background work" },
     "invoice": { "failed": "the invoice couldn't be sent" },
     "import": { "committed": "imported lines from a CSV file" }
   },
@@ -258,7 +260,47 @@
     "PRICE_MISMATCH": "Shopify's subtotal differs from the quote, so the invoice wasn't sent.",
     "INVOICE_FAILED": "The invoice couldn't be sent: {{message}}",
     "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed.",
-    "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}"
+    "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}",
+    "RETRIES_EXHAUSTED": "We couldn't reach Shopify after several tries: {{message}}",
+    "OUT_OF_STOCK": "Stock is now lower than the quoted quantity: {{message}}",
+    "actions": {
+      "retry": "Retry",
+      "createNew": "Create a new draft order",
+      "recreate": "Recreate the draft order",
+      "cancel": "Cancel quote",
+      "overwrite": "Overwrite with the quote",
+      "acceptShopify": "Keep Shopify's version (new version)",
+      "editQuote": "Edit quote",
+      "revise": "Start a new version",
+      "retrySend": "Send again",
+      "dismiss": "Dismiss"
+    },
+    "errors": {
+      "gone": "This problem was already resolved. Reload the page.",
+      "noLines": "Shopify's draft order has no products we can quote."
+    }
+  },
+  "degraded": {
+    "shopify": "Shopify is responding slowly. Your changes are saved and will sync automatically.",
+    "email": "Emails are delayed. They are queued and will be sent automatically."
+  },
+  "jobs": {
+    "title": "Jobs",
+    "empty": "No failed background work. Everything that went wrong was retried successfully.",
+    "columns": { "queue": "Task", "quote": "Quote", "error": "Last error", "attempts": "Attempts", "failedAt": "Failed", "action": "Action" },
+    "retry": "Retry",
+    "retryLabel": "Retry {{queue}}",
+    "queues": {
+      "sync-draft-order": "Sync draft order",
+      "send-invoice": "Send invoice",
+      "process-webhook": "Shopify update",
+      "import-csv": "CSV import",
+      "privacy": "Privacy request",
+      "send-email": "Email",
+      "expire-quotes": "Expire quotes",
+      "reconcile-all": "Nightly check (all shops)",
+      "reconcile": "Nightly check with Shopify"
+    }
   },
   "import": {
     "title": "Import lines into {{label}}",
@@ -372,7 +414,8 @@
         "expiringSoon": "My quote expires in 3 days",
         "needsAttention": "A quote needs attention (managers)",
         "quoteDeclined": "A buyer declined my quote",
-        "changesRequested": "A buyer asked for changes to my quote"
+        "changesRequested": "A buyer asked for changes to my quote",
+        "quoteRequested": "A new quote request came in (managers)"
       }
     },
     "errors": {
@@ -389,6 +432,8 @@
       "expiryDays": "Quotes expire after (days)",
       "reserveInventory": "Reserve stock while a quote is open",
       "reserveInventoryHelp": "Draft orders hold the items until the quote expires.",
+      "importSubmittedDrafts": "Turn company draft orders into quotes",
+      "importSubmittedDraftsHelp": "Draft orders for a company made outside Vendora become draft quotes: B2B checkouts submitted for review, and draft orders made in the Shopify admin.",
       "notifyEmails": "Notification emails",
       "notifyEmailsHelp": "Comma-separated. Vendora emails these addresses when a quote needs someone.",
       "save": "Save general settings"
@@ -438,7 +483,8 @@
     "expiringSoon": { "subject": "Expires {{date}}: {{quoteLabel}}", "body": "{{quoteLabel}} expires on {{date}}. Extend the date or follow up with the buyer.", "action": "Open quote" },
     "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" },
     "quoteDeclined": { "subject": "Declined: {{quoteLabel}}", "body": "The buyer declined {{quoteLabel}}. Their reason:", "action": "Open quote" },
-    "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" }
+    "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" },
+    "quoteRequested": { "subject": "New quote request: {{quoteLabel}}", "body": "A buyer asked for a quote from the store. It is now {{quoteLabel}}, a draft quote with no one assigned. Check the prices, then submit it.", "action": "Open quote" }
   },
   "publicQuote": {
     "title": "Quote {{number}} – version {{version}}",

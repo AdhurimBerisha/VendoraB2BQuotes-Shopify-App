@@ -62,32 +62,45 @@ const createQuote = async (actor: StaffActor, input: { locationId: string }) => 
   }
 
   return db.$transaction(async (tx) => {
-    // The row lock on Shop hands out numbers one at a time: no gaps from races, no duplicates.
-    const shop = await tx.shop.update({
-      where: { id: actor.shop },
-      data: { nextQuoteNumber: { increment: 1 } },
-    });
-    const quote = await tx.quote.create({
-      data: {
-        shop: actor.shop,
-        number: shop.nextQuoteNumber - 1,
+    const { quote, version } = await insertQuote(
+      tx,
+      actor.shop,
+      {
         companyId: location.company.id,
         companyLocationId: location.id,
         companyContactId: contact.id,
         contactCustomerId: contact.customer?.id ?? null,
         currencyCode: location.currency,
         assignedToUserId: actor.userId,
-        expiresAt: addDaysEndOfDay(new Date(), shop.defaultExpiryDays, shop.timezone),
       },
-    });
-    const firstVersion = await tx.quoteVersion.create({
-      data: { quoteId: quote.id, versionNumber: 1, createdByUserId: actor.userId },
-    });
-    await tx.quote.update({ where: { id: quote.id }, data: { currentVersionId: firstVersion.id } });
+      actor.userId,
+    );
     await audit(tx, actor, quote.id, "quote.created", { number: quote.number });
     console.log("quote created", { shop: actor.shop, quoteId: quote.id, number: quote.number });
-    return { ...quote, currentVersionId: firstVersion.id };
+    return { ...quote, currentVersionId: version.id };
   });
+};
+
+// A new quote with its next number, default expiry and an empty version 1.
+const insertQuote = async (
+  tx: Prisma.TransactionClient,
+  shopId: string,
+  fields: Omit<Prisma.QuoteUncheckedCreateInput, "shop" | "number">,
+  createdByUserId: bigint | null,
+) => {
+  // The row lock on Shop hands out numbers one at a time: no gaps from races, no duplicates.
+  const shop = await tx.shop.update({ where: { id: shopId }, data: { nextQuoteNumber: { increment: 1 } } });
+  const quote = await tx.quote.create({
+    data: {
+      expiresAt: addDaysEndOfDay(new Date(), shop.defaultExpiryDays, shop.timezone),
+      ...fields,
+      shop: shopId,
+      number: shop.nextQuoteNumber - 1,
+    },
+  });
+  const version = await tx.quoteVersion.create({ data: { quoteId: quote.id, versionNumber: 1, createdByUserId } });
+  await tx.quote.update({ where: { id: quote.id }, data: { currentVersionId: version.id } });
+  return { quote, version };
 };
 
 const getQuote = async (shop: string, id: string) => {
@@ -222,6 +235,7 @@ export {
   createQuote,
   expireQuote,
   getQuote,
+  insertQuote,
   listFiltersSchema,
   listQuotes,
   quoteLabel,

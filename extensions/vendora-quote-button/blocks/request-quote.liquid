@@ -1,0 +1,47 @@
+{%- if customer.b2b? -%}
+  <div
+    class="vendora-rfq"
+    data-location-id="{{ customer.current_location.id }}"
+    data-msg-sending="{{ 'request_quote.sending' | t | escape }}"
+    data-msg-empty="{{ 'request_quote.empty' | t | escape }}"
+    data-msg-done="{{ 'request_quote.done' | t: quote: '__QUOTE__' | escape }}"
+    data-msg-forbidden="{{ 'request_quote.forbidden' | t | escape }}"
+    data-msg-rate-limited="{{ 'request_quote.rate_limited' | t | escape }}"
+    data-msg-failed="{{ 'request_quote.failed' | t | escape }}"
+    {{ block.shopify_attributes }}
+  >
+    <form class="vendora-rfq__form">
+      {%- if block.settings.show_message -%}
+        <label class="vendora-rfq__label" for="vendora-rfq-message-{{ block.id }}">
+          {{- 'request_quote.message_label' | t -}}
+        </label>
+        <textarea
+          class="vendora-rfq__message"
+          id="vendora-rfq-message-{{ block.id }}"
+          name="message"
+          rows="3"
+          maxlength="1000"
+        ></textarea>
+      {%- endif -%}
+      <button type="submit" class="vendora-rfq__button button">{{ block.settings.label | escape }}</button>
+      <p class="vendora-rfq__status" role="status" aria-live="polite"></p>
+    </form>
+  </div>
+{%- elsif customer == blank -%}
+  <p class="vendora-rfq" {{ block.shopify_attributes }}>
+    <a href="{{ routes.account_login_url }}">{{ 'request_quote.log_in' | t }}</a>
+  </p>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "t:name",
+  "target": "section",
+  "javascript": "request-quote.js",
+  "stylesheet": "request-quote.css",
+  "settings": [
+    { "type": "text", "id": "label", "label": "t:settings.label", "default": "Request a quote" },
+    { "type": "checkbox", "id": "show_message", "label": "t:settings.show_message", "default": true }
+  ]
+}
+{% endschema %}

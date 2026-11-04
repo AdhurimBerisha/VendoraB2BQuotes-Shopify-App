@@ -1,0 +1,7 @@
+{
+  "name": "Request a quote",
+  "settings": {
+    "label": "Button label",
+    "show_message": "Show a message box"
+  }
+}

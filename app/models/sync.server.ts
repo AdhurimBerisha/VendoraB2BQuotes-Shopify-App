@@ -6,7 +6,7 @@ import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { createI18n } from "../lib/i18n";
 import { D } from "../lib/money";
 import { quoteLink } from "../lib/signed-token.server";
-import { ShopifyUserErrors } from "../shopify/client.server";
+import { ShopifyDenied, ShopifyThrottled, ShopifyUserErrors } from "../shopify/client.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import * as drafts from "../shopify/draft-orders.server";
 import type { Actor, StaffActor, SystemActor } from "./actor";
@@ -105,12 +105,23 @@ const runSync = async (admin: AdminApiContext, job: SyncJob) => {
     if (job.op === "delete" || quote.status === "CANCELLED" || quote.status === "EXPIRED") await doDelete(admin, quote);
     else await doUpsert(admin, quote, job.send);
   } catch (error) {
-    if (error instanceof ShopifyUserErrors) {
-      // Shopify rejected the input, so nothing was changed: safe to retry right away.
+    if (error instanceof ShopifyThrottled) {
+      // Nothing happened in Shopify: free the claim so pg-boss's retry can run at once.
+      await db.quote.updateMany({
+        where: { id: quote.id, shop, syncStatus: "SYNCING" },
+        data: { syncStatus: "QUEUED", syncClaimedAt: null },
+      });
+      console.log("sync throttled, claim released", { shop, quoteId });
+      throw error;
+    }
+    // Rejected input, or a missing permission (scope or plan): nothing changed and retrying
+    // won't help, so a person has to act.
+    if (error instanceof ShopifyUserErrors || error instanceof ShopifyDenied) {
+      const message = error instanceof ShopifyDenied ? `Missing permission: ${error.message}` : error.message;
       await db.$transaction(async (tx) => {
-        await tx.quote.update({ where: { id: quote.id }, data: { syncStatus: "FAILED", syncError: error.message } });
-        await raise(tx, shop, quote.id, { code: "SYNC_FAILED", message: error.message });
-        await audit(tx, system(shop, "sync-draft-order"), quote.id, "sync.failed", { message: error.message });
+        await tx.quote.update({ where: { id: quote.id }, data: { syncStatus: "FAILED", syncError: message } });
+        await raise(tx, shop, quote.id, { code: "SYNC_FAILED", message });
+        await audit(tx, system(shop, "sync-draft-order"), quote.id, "sync.failed", { message });
       });
       return;
     }
@@ -161,6 +172,8 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
     ? await drafts.updateDraftOrder(admin, draftOrderId, input)
     : await drafts.createDraftOrder(admin, input);
 
+  if (!draftOrderId) measureSearchLag(admin, quote.id);
+
   // Read back Shopify's subtotal: it applies catalog prices itself, so ours could differ.
   const after = await drafts.getDraftOrder(admin, result.id);
   const shopifySubtotal = after ? D(after.subtotalPriceSet.presentmentMoney.amount) : null;
@@ -200,6 +213,25 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
       await enqueue("send-invoice", sendJob, { singletonKey: version.id, tx });
     }
   });
+};
+
+// B-7: the crash-retry adopts a draft order by tag search, which relies on Shopify's search index
+// catching up within STALE_MS. For 1 in 10 creates, log how long that takes (never in tests).
+// Alert on "NOT searchable" in the logs. Fire-and-forget: it never delays or fails the sync.
+const SEARCH_LAG_SAMPLE = 0.1;
+const measureSearchLag = (admin: AdminApiContext, quoteId: string) => {
+  if (process.env.NODE_ENV === "test" || Math.random() >= SEARCH_LAG_SAMPLE) return;
+  void (async () => {
+    const start = Date.now();
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      if ((await drafts.findDraftOrdersByTag(admin, quoteId)).length) {
+        console.log("search_lag: draft order searchable", { quoteId, ms: Date.now() - start });
+        return;
+      }
+    }
+    console.warn("search_lag: draft order NOT searchable after 60 s", { quoteId, ms: Date.now() - start });
+  })().catch((error: unknown) => console.warn("search_lag: measurement failed", { quoteId, error: String(error) }));
 };
 
 const doDelete = async (admin: AdminApiContext, quote: { id: string; shop: string; draftOrderId: string | null }) => {
@@ -283,7 +315,8 @@ ${t("email.viewQuote")}: ${link}`.trim(),
     });
   } catch (error) {
     if (error instanceof ShopifyUserErrors) return failed(error.message);
-    throw error; // unclear → retry → the claim branch checks invoiceSentAt before resending
+    if (error instanceof ShopifyDenied) return failed(`Missing permission: ${error.message}`);
+    throw error; // unclear or throttled → retry → the claim branch checks invoiceSentAt before resending
   }
   await markSent(quote.id, job, invoiceUrl);
 };
@@ -300,5 +333,28 @@ const markSent = async (quoteId: string, job: SendInvoiceJob, invoiceUrl: string
   console.log("quote sent", { shop: job.shop, quoteId, versionId: job.versionId });
 };
 
-export { STALE_MS, SyncInFlight, requestSync, runSendInvoice, runSync, sendQuote };
+// The last retry of a sync job failed (M4.2): stop waiting and ask a person (Retry action).
+const giveUpSync = async (shop: string, quoteId: string, error: string) => {
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.quote.updateMany({
+      where: { id: quoteId, shop, syncStatus: { in: ["QUEUED", "SYNCING"] } },
+      data: { syncStatus: "NEEDS_ATTENTION", syncClaimedAt: null, syncError: error },
+    });
+    if (count !== 1) return; // finished some other way meanwhile
+    await raise(tx, shop, quoteId, { code: "RETRIES_EXHAUSTED", message: error });
+    await audit(tx, system(shop, "sync-draft-order"), quoteId, "sync.gave_up", { error });
+  });
+};
+
+// The last retry of a send-invoice job failed: the quote stays APPROVED; "Retry send" sends again.
+const giveUpInvoice = async (job: SendInvoiceJob, error: string) => {
+  await db.$transaction(async (tx) => {
+    const quote = await tx.quote.findFirst({ where: { id: job.quoteId, shop: job.shop }, select: { status: true } });
+    if (quote?.status !== "APPROVED") return; // sent or closed meanwhile
+    await raise(tx, job.shop, job.quoteId, { code: "INVOICE_FAILED", message: error });
+    await audit(tx, system(job.shop, "send-invoice"), job.quoteId, "invoice.failed", { message: error });
+  });
+};
+
+export { STALE_MS, SyncInFlight, giveUpInvoice, giveUpSync, requestSync, runSendInvoice, runSync, sendQuote };
 export type { SendInvoiceJob, SyncJob };

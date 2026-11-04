@@ -16,7 +16,8 @@ import { D, type Money, formatMoney } from "../lib/money";
 import { gid, parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { decide, submitQuote } from "../models/approval.server";
-import { attentionItems } from "../models/attention";
+import { ATTENTION_ACTIONS, type AttentionAction, type AttentionCode, attentionItems } from "../models/attention";
+import { resolveAttention } from "../models/attention-actions.server";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
 import { BLOCKING, type LineProblem } from "../models/pricing";
@@ -199,6 +200,11 @@ const intentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("revise") }),
   z.object({ intent: z.literal("send"), message: z.string().max(5000).default("") }),
   z.object({ intent: z.literal("retrySync") }),
+  z.object({
+    intent: z.literal("resolve"),
+    code: z.enum(Object.keys(ATTENTION_ACTIONS) as [AttentionCode, ...AttentionCode[]]),
+    action: z.string().max(40),
+  }),
   z.object({ intent: z.literal("cancel"), reason: z.string().max(500).optional() }),
   z.object({ intent: z.literal("setExpiry"), expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
 ]);
@@ -231,6 +237,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       case "retrySync":
         requirePermission(actor, "attention.resolve");
         await requestSync(actor, id);
+        break;
+      case "resolve":
+        // resolveAttention checks that the action belongs to the code.
+        await resolveAttention(actor, id, input.code, input.action as AttentionAction);
         break;
       case "cancel":
         await cancelQuote(actor, id, input.reason);
@@ -315,7 +325,7 @@ export default function QuoteDetail() {
         </s-stack>
         <ErrorBanner result={fetcher.data} />
         {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}
-        <ProblemsBanner data={data} />
+        <ProblemsBanner data={data} onResolve={(code, action) => submit("resolve", { code, action })} busy={fetcher.state !== "idle"} />
         {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
       </s-stack>
 
@@ -381,20 +391,50 @@ function ExpiryForm({ expiresOn, today }: { expiresOn: string; today: string }) 
 }
 
 // B-18: one place for everything wrong with the quote (line problems, attention items, sync error).
-function ProblemsBanner({ data }: { data: LoaderData }) {
+// M4.2: each attention item has its own action buttons (ATTENTION_ACTIONS).
+function ProblemsBanner({
+  data,
+  onResolve,
+  busy,
+}: {
+  data: LoaderData;
+  onResolve: (code: AttentionCode, action: AttentionAction) => void;
+  busy: boolean;
+}) {
   const { t } = useTranslation();
   const blocking = (data.version?.lines ?? []).filter((line) => line.problems.some((problem) => BLOCKING.includes(problem)));
-  const hasSyncItem = data.quote.attention.some((item) => item.code === "SYNC_FAILED");
-  const messages = [
-    ...data.quote.attention.map((item) => t(`attention.${item.code}`, { message: item.message })),
+  const hasSyncItem = data.quote.attention.some((item) => item.code === "SYNC_FAILED" || item.code === "RETRIES_EXHAUSTED");
+  const other = [
     ...(data.quote.syncError && !hasSyncItem ? [t("attention.SYNC_FAILED", { message: data.quote.syncError })] : []),
     ...(blocking.length ? [t("quote.problems.blockingLines", { count: blocking.length })] : []),
   ];
-  if (messages.length === 0) return null;
+  if (data.quote.attention.length === 0 && other.length === 0) return null;
   return (
     <s-banner tone="warning" heading={t("quote.problems.heading")}>
       <s-unordered-list>
-        {messages.map((message) => (
+        {data.quote.attention.map((item) => (
+          <s-list-item key={item.code}>
+            <s-stack direction="block" gap="small-200">
+              <s-text>{t(`attention.${item.code}`, { message: item.message })}</s-text>
+              {data.perms.retry && (
+                <s-stack direction="inline" gap="small-200">
+                  {(ATTENTION_ACTIONS[item.code] as readonly AttentionAction[]).map((action, index) => (
+                    <s-button
+                      key={action}
+                      variant={index === 0 ? "primary" : "secondary"}
+                      tone={action === "cancel" ? "critical" : "auto"}
+                      onClick={() => onResolve(item.code, action)}
+                      {...(busy ? { loading: true } : {})}
+                    >
+                      {t(`attention.actions.${action}`)}
+                    </s-button>
+                  ))}
+                </s-stack>
+              )}
+            </s-stack>
+          </s-list-item>
+        ))}
+        {other.map((message) => (
           <s-list-item key={message}>{message}</s-list-item>
         ))}
       </s-unordered-list>

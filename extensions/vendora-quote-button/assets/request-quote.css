@@ -1,0 +1,4 @@
+.vendora-rfq__form { display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0; }
+.vendora-rfq__message { width: 100%; font: inherit; }
+.vendora-rfq__button { align-self: flex-start; }
+.vendora-rfq__status:empty { display: none; }
