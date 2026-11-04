@@ -332,7 +332,7 @@ export default function QuoteDetail() {
       <CustomerSection customer={data.customer} />
       {version && (
         <LinesSection
-          key={`${quote.lockVersion}-${version.number}`}
+          key={version.number}
           quoteId={quote.id}
           lockVersion={quote.lockVersion}
           version={version}
@@ -496,14 +496,30 @@ function LinesSection({
   const { t } = useTranslation();
   const shopify = useAppBridge();
   const fetcher = useFetcher<typeof action>();
-  const [lines, setLines] = useState<EditLine[]>(() =>
-    version.lines.map((line) => ({ ...line, quantity: String(line.quantity) })),
-  );
+  const serverLines = () => version.lines.map((line) => ({ ...line, quantity: String(line.quantity) }));
+  const [lines, setLines] = useState<EditLine[]>(serverLines);
   const [quoteDiscount, setQuoteDiscount] = useState(version.quoteDiscountPct);
   const [dirty, setDirty] = useState(false);
+  // The lockVersion the lines on screen are based on; saves send it back (optimistic lock).
+  const [baseLock, setBaseLock] = useState(lockVersion);
+  const [handledConflict, setHandledConflict] = useState<unknown>(null);
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data && !fetcher.data.ok) setDirty(true); // keep edits after an error
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    setDirty(!fetcher.data.ok); // keep edits after an error
   }, [fetcher.state, fetcher.data]);
+
+  const isConflict = !!fetcher.data && !fetcher.data.ok && fetcher.data.error.key === "quote.errors.changedByOther";
+  const conflict = isConflict && fetcher.data !== handledConflict;
+  const loadLatest = () => {
+    setLines(serverLines());
+    setQuoteDiscount(version.quoteDiscountPct);
+    setDirty(false);
+    setBaseLock(lockVersion);
+    setHandledConflict(fetcher.data);
+  };
+  // The quote changed on the server (our own save, or someone else's while we had no edits): show it.
+  // With unsaved edits we keep them, so the next save fails with changedByOther instead of losing them.
+  if (lockVersion !== baseLock && !dirty && !conflict) loadLatest();
 
   const update = (index: number, field: "quantity" | "overridePrice" | "discountPct", value: string) => {
     setLines((current) => current.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
@@ -542,11 +558,11 @@ function LinesSection({
   const invalid =
     lines.some((line) => quantityError(line.quantity) || decimalError(line.overridePrice) || decimalError(line.discountPct, 100)) ||
     decimalError(quoteDiscount, 100);
-  const save = () =>
+  const save = (basedOn: number) =>
     fetcher.submit(
       {
         intent: "saveLines",
-        lockVersion: String(lockVersion),
+        lockVersion: String(basedOn),
         quoteDiscountPct: quoteDiscount,
         lines: JSON.stringify(
           lines.map((line) => ({
@@ -563,7 +579,20 @@ function LinesSection({
   return (
     <s-section heading={t("quote.lines.title")}>
       <s-stack direction="block" gap="base">
-        <ErrorBanner result={fetcher.data} />
+        <ErrorBanner result={isConflict ? null : fetcher.data} />
+        {conflict && (
+          <s-banner tone="warning" heading={t("quote.lines.conflict.heading")}>
+            <s-paragraph>{t("quote.lines.conflict.body")}</s-paragraph>
+            <s-button slot="secondary-actions" onClick={loadLatest}>
+              {t("quote.lines.conflict.reload")}
+            </s-button>
+            {editable && (
+              <s-button slot="secondary-actions" onClick={() => save(lockVersion)}>
+                {t("quote.lines.conflict.overwrite")}
+              </s-button>
+            )}
+          </s-banner>
+        )}
         {version.locked && <s-text color="subdued">{t("quote.lines.locked")}</s-text>}
         {lines.length === 0 ? (
           <s-paragraph>{t("quote.lines.empty")}</s-paragraph>
@@ -697,7 +726,7 @@ function LinesSection({
             <s-button onClick={addProducts}>{t("quote.lines.add")}</s-button>
             <s-button
               variant="primary"
-              onClick={save}
+              onClick={() => save(baseLock)}
               disabled={!dirty || invalid}
               {...(fetcher.state !== "idle" ? { loading: true } : {})}
             >

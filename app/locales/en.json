@@ -123,7 +123,13 @@
       "quoteDiscount": "Quote discount (%)",
       "quoteDiscountValue": "Quote discount: {{value}} %",
       "add": "Add products",
-      "save": "Save lines"
+      "save": "Save lines",
+      "conflict": {
+        "heading": "Someone else changed this quote",
+        "body": "Your changes are not saved. Reload to see the latest lines (your changes are discarded), or save yours over theirs.",
+        "reload": "Reload latest",
+        "overwrite": "Save mine anyway"
+      }
     },
     "totals": {
       "list": "Catalog total: {{amount}}",

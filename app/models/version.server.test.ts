@@ -186,14 +186,65 @@ test("an empty quote can't be submitted", async () => {
   await expect(submitQuote(rep(), quote.id)).rejects.toMatchObject({ key: "quote.errors.noLines" });
 });
 
-test("two submits at once: one wins, one approval row", async () => {
+test("10 submits at once: one wins, one approval row", async () => {
   const id = await draftQuote("30");
 
-  const results = await Promise.allSettled([submitQuote(rep(), id), submitQuote(rep(), id)]);
+  const results = await Promise.allSettled(Array.from({ length: 10 }, () => submitQuote(rep(), id)));
 
-  expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   const quote = await getQuote(SHOP, id);
+  expect(quote.status).toBe("PENDING_APPROVAL");
   expect(await db.approval.count({ where: { versionId: quote.currentVersionId! } })).toBe(1);
+});
+
+test("a save sent from a page opened before submit is rejected, the locked version is unchanged", async () => {
+  const id = await draftQuote();
+  const { lockVersion } = await getQuote(SHOP, id); // the rep's open page
+
+  await submitQuote(manager(), id);
+
+  await expect(
+    saveDraftLines(rep(), id, lockVersion, [{ variantId: VARIANT, quantity: 9 }], null),
+  ).rejects.toMatchObject({ key: "quote.errors.changedByOther" });
+  expect((await getQuote(SHOP, id)).currentVersion!.lines.map((l) => l.quantity)).toEqual([2]);
+});
+
+test("save and submit at once: the submitted version holds the lines it was approved with", async () => {
+  const id = await draftQuote();
+  const { lockVersion } = await getQuote(SHOP, id);
+
+  const [saved, submitted] = await Promise.allSettled([
+    saveDraftLines(rep(), id, lockVersion, [{ variantId: VARIANT, quantity: 3 }], null),
+    submitQuote(manager(), id),
+  ]);
+
+  expect(submitted.status).toBe("fulfilled");
+  const quote = await getQuote(SHOP, id);
+  expect(quote.status).toBe("APPROVED");
+  // Either the save got in first (3 × 100) or it was rejected (2 × 100); totals always match the lines.
+  const quantity = saved.status === "fulfilled" ? 3 : 2;
+  expect(quote.currentVersion!.lines.map((l) => l.quantity)).toEqual([quantity]);
+  expect(quote.currentVersion!.total.toFixed(2)).toBe((quantity * 100).toFixed(2));
+});
+
+test("approve and revise at the same moment: one consistent state", async () => {
+  const id = await draftQuote("30");
+  await submitQuote(rep(), id);
+
+  const [approved] = await Promise.allSettled([decide(manager(), id, "APPROVED"), reviseQuote(rep(), id)]);
+  expect(approved.status).toBe("fulfilled"); // the approval never loses: revise can't run on a pending quote
+
+  // revise only works from APPROVED: either it ran after the approval (DRAFT, v2 unlocked)
+  // or it failed and the quote stays APPROVED with v1 locked. Never both.
+  const quote = await getQuote(SHOP, id);
+  const version = quote.currentVersion!;
+  if (quote.status === "DRAFT") {
+    expect(version).toMatchObject({ versionNumber: 2, lockedAt: null });
+  } else {
+    expect(quote.status).toBe("APPROVED");
+    expect(version.versionNumber).toBe(1);
+    expect(version.lockedAt).not.toBeNull();
+  }
 });
 
 test("only owners change approval rules", async () => {
