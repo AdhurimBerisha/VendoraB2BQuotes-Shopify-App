@@ -1,0 +1,12 @@
+{
+  "request_quote": {
+    "message_label": "Message for our team (optional)",
+    "sending": "Sending your quote request…",
+    "empty": "Your cart is empty. Add products, then request a quote.",
+    "done": "Thanks! We received quote request {{ quote }}. We'll email you the quote.",
+    "forbidden": "Your account can't request quotes for this company location.",
+    "rate_limited": "Too many requests. Try again in a minute.",
+    "failed": "Something went wrong. Try again, or contact us.",
+    "log_in": "Log in with your business account to request a quote"
+  }
+}

@@ -84,6 +84,7 @@ const fakeShopify = ({
   variants = {} as Record<string, FakeVariant>,
   subtotal = "0.00",
   contactEmail = "buyer@example.com" as string | null,
+  buyerLocations = ["gid://shopify/CompanyLocation/1"], // where the logged-in buyer holds a role (M3.5)
 } = {}) => {
   const drafts: FakeDraft[] = [];
   const calls = { create: 0, update: 0, delete: 0, invoice: 0, skuSearch: 0 };
@@ -176,6 +177,11 @@ const fakeShopify = ({
           },
         },
       });
+    }
+    if (query.includes("VendoraBuyerLocations")) {
+      const roles = buyerLocations.map((id) => ({ companyLocation: { id } }));
+      const profiles = [{ id: "gid://shopify/CompanyContact/7", roleAssignments: { nodes: roles } }];
+      return Response.json({ data: { customer: { companyContactProfiles: profiles } } });
     }
     if (query.includes("VendoraTagsAdd")) {
       const draft = find(variables.id);

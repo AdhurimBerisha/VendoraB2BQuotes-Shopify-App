@@ -1,6 +1,5 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
-import { getBoss } from "../jobs/queue.server";
 import { unauthenticated } from "../shopify.server";
 import { addDraftTags, getSubmittedDraft, quoteTag } from "../shopify/draft-orders.server";
 import { getCompanyLocation } from "../shopify/companies.server";
@@ -9,8 +8,8 @@ import { raise } from "./attention.server";
 import { notify } from "./notify.server";
 import { audit } from "./audit.server";
 import type { LineProblem } from "./pricing";
-import { type QuoteStatus, insertQuote, transition } from "./quote.server";
-import { lineRows, priceLines } from "./version.server";
+import { createRequestedQuote } from "./quote-request.server";
+import { type QuoteStatus, transition } from "./quote.server";
 
 // Shopify webhook payloads (REST shape: numeric ids, snake_case), only the fields we read.
 type DraftOrderPayload = {
@@ -155,42 +154,15 @@ const importDraft = async (
   const input = draft.lineItems.nodes.flatMap((line) =>
     line.variant ? [{ variantId: line.variant.id, quantity: line.quantity }] : [],
   );
-  const skipped = draft.lineItems.nodes.length - input.length;
-  const { lines, totals } = await priceLines(admin, location.id, location.currency, input, null);
-
-  await getBoss(); // start pg-boss outside the transaction (see enqueue)
   const actor = webhookActor(shop, "draft_orders/create");
-  return db.$transaction(async (tx) => {
-    const { quote, version } = await insertQuote(
-      tx,
-      shop,
-      {
-        companyId: location.company.id,
-        companyLocationId: location.id,
-        companyContactId: contact.id,
-        contactCustomerId: contact.customer?.id ?? null,
-        currencyCode: location.currency,
-        draftOrderId,
-        syncStatus: "SYNCED", // the draft order already exists
-      },
-      null,
-    );
-    await tx.quoteLine.createMany({ data: lineRows(version.id, lines, location.currency) });
-    await tx.quoteVersion.update({
-      where: { id: version.id },
-      data: {
-        listTotal: totals.listTotal,
-        subtotal: totals.subtotal,
-        discountTotal: totals.discountTotal,
-        total: totals.total,
-      },
-    });
-    await tx.quote.update({ where: { id: quote.id }, data: { syncedVersionId: version.id } });
-    await audit(tx, actor, quote.id, "quote.created", { number: quote.number, source: "storefront", draftOrderId, skipped });
-    await notify(tx, shop, "quoteRequested", { kind: "managers" }, { quoteId: quote.id });
-    console.log("quote imported from draft order", { shop, quoteId: quote.id, draftOrderId, lines: lines.length, skipped });
-    return quote.id;
+  const skipped = draft.lineItems.nodes.length - input.length;
+  const quote = await createRequestedQuote(admin, shop, location, contact, input, {
+    kind: "draftOrder",
+    actor,
+    draftOrderId,
+    skipped,
   });
+  return quote.id;
 };
 
 const onDraftDelete = async (shop: string, payload: { id: number }) => {

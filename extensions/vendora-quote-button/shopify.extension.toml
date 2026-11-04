@@ -1,0 +1,6 @@
+# M3.5 Option 2: "Request a quote" app block. Posts the cart to the app proxy
+# (/apps/vendora/quote-request → app/routes/proxy.quote-request.tsx).
+name = "Request a quote"
+type = "theme"
+handle = "vendora-quote-button"
+uid = "97b0b781-57ad-10fd-742e-8fd49f0ffba98c9aa887"

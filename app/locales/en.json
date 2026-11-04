@@ -442,7 +442,7 @@
     "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" },
     "quoteDeclined": { "subject": "Declined: {{quoteLabel}}", "body": "The buyer declined {{quoteLabel}}. Their reason:", "action": "Open quote" },
     "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" },
-    "quoteRequested": { "subject": "New quote request: {{quoteLabel}}", "body": "A company draft order made outside Vendora (usually a checkout submitted for review) is now {{quoteLabel}}, a draft quote with no one assigned. Check the prices, then submit it.", "action": "Open quote" }
+    "quoteRequested": { "subject": "New quote request: {{quoteLabel}}", "body": "A buyer asked for a quote from the store. It is now {{quoteLabel}}, a draft quote with no one assigned. Check the prices, then submit it.", "action": "Open quote" }
   },
   "publicQuote": {
     "title": "Quote {{number}} – version {{version}}",

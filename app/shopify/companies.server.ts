@@ -87,4 +87,24 @@ const companyIdsForCustomer = async (admin: AdminApiContext, customerId: string)
   return data?.customer?.companyContactProfiles.map((profile) => profile.company.id) ?? [];
 };
 
-export { companyIdsForCustomer, companyNames, getCompanyLocation, getContact, searchCompanies };
+// The buyer's company contact that may buy for this location (has a role there), or null.
+const contactIdForLocation = async (admin: AdminApiContext, customerId: string, locationId: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraBuyerLocations($id: ID!) {
+        customer(id: $id) {
+          companyContactProfiles { id roleAssignments(first: 100) { nodes { companyLocation { id } } } }
+        }
+      }`,
+      { variables: { id: customerId } },
+    ),
+  );
+  const { data } = await response.json();
+  const profile = data?.customer?.companyContactProfiles.find((contact) =>
+    contact.roleAssignments.nodes.some((role) => role.companyLocation.id === locationId),
+  );
+  return profile?.id ?? null;
+};
+
+export { companyIdsForCustomer, companyNames, contactIdForLocation, getCompanyLocation, getContact, searchCompanies };
