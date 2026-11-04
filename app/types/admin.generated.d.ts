@@ -139,6 +139,14 @@ export type VendoraTagsAddMutationVariables = AdminTypes.Exact<{
 
 export type VendoraTagsAddMutation = { tagsAdd?: AdminTypes.Maybe<{ userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
 
+export type VendoraTagsRemoveMutationVariables = AdminTypes.Exact<{
+  id: AdminTypes.Scalars['ID']['input'];
+  tags: Array<AdminTypes.Scalars['String']['input']> | AdminTypes.Scalars['String']['input'];
+}>;
+
+
+export type VendoraTagsRemoveMutation = { tagsRemove?: AdminTypes.Maybe<{ userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
+
 export type VendoraDraftOrderSummaryQueryVariables = AdminTypes.Exact<{
   id: AdminTypes.Scalars['ID']['input'];
 }>;
@@ -213,6 +221,7 @@ interface GeneratedMutationTypes {
   "#graphql\n      mutation VendoraDraftOrderUpdate($id: ID!, $input: DraftOrderInput!) {\n        draftOrderUpdate(id: $id, input: $input) { draftOrder { id name updatedAt } userErrors { field message } }\n      }": {return: VendoraDraftOrderUpdateMutation, variables: VendoraDraftOrderUpdateMutationVariables},
   "#graphql\n      mutation VendoraDraftOrderDelete($input: DraftOrderDeleteInput!) {\n        draftOrderDelete(input: $input) { deletedId userErrors { field message } }\n      }": {return: VendoraDraftOrderDeleteMutation, variables: VendoraDraftOrderDeleteMutationVariables},
   "#graphql\n      mutation VendoraTagsAdd($id: ID!, $tags: [String!]!) {\n        tagsAdd(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsAddMutation, variables: VendoraTagsAddMutationVariables},
+  "#graphql\n      mutation VendoraTagsRemove($id: ID!, $tags: [String!]!) {\n        tagsRemove(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsRemoveMutation, variables: VendoraTagsRemoveMutationVariables},
   "#graphql\n      mutation VendoraInvoiceSend($id: ID!, $email: EmailInput) {\n        draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id invoiceSentAt invoiceUrl } userErrors { field message } }\n      }": {return: VendoraInvoiceSendMutation, variables: VendoraInvoiceSendMutationVariables},
 }
 declare module '@shopify/admin-api-client' {

@@ -5,7 +5,8 @@ import { redactShop } from "../models/privacy.server";
 import { requestQuoteFromStorefront } from "../models/quote-request.server";
 import { STALE_MS, runSync } from "../models/sync.server";
 import { processWebhook } from "../models/webhooks.server";
-import { ShopifyDenied, ShopifyThrottled } from "../shopify/client.server";
+import type { AttentionItem } from "../models/attention";
+import { ShopifyThrottled } from "../shopify/client.server";
 import { staff, testQuote, testShop } from "./factories";
 import { type Fault, fakeShopify } from "./fake-shopify";
 
@@ -41,26 +42,38 @@ afterAll(async () => {
 });
 
 const load = (id: string) => db.quote.findUniqueOrThrow({ where: { id } });
+const codes = (attention: unknown) => ((attention as AttentionItem[] | null) ?? []).map((item) => item.code);
 const upsert = (quoteId: string) => ({ shop: SHOP, quoteId, op: "upsert" as const });
 const backdateClaim = (quoteId: string) =>
   db.quote.update({ where: { id: quoteId }, data: { syncClaimedAt: new Date(Date.now() - STALE_MS - 1000) } });
 
-// Scenarios 12, 12b, 5b and denied access: the create fails before Shopify does anything.
-// ponytail: throttled/denied stay SYNCING until the stale window like any unclear error;
-// M4.2 retries throttling at once and stops on access denied.
-test.each<[Fault, unknown]>([
-  ["throttled", ShopifyThrottled],
-  ["http429", ShopifyThrottled],
-  ["http500", Error],
-  ["network", Error],
-  ["accessDenied", ShopifyDenied],
-])("create fails with %s: nothing created, the retry makes exactly one draft order", async (fault, errorClass) => {
+// Scenarios 12, 12b (M4.2): throttled means nothing happened, so the claim is released at once
+// and the next attempt runs without waiting for the stale window.
+test.each<Fault>(["throttled", "http429"])("create %s: claim released, the retry makes exactly one draft order", async (fault) => {
   const shopify = fakeShopify();
   shopify.failNext("VendoraDraftOrderCreate", fault);
   const quote = await testQuote(SHOP, { overrides: { syncStatus: "QUEUED" } });
 
-  await expect(runSync(shopify.admin, upsert(quote.id))).rejects.toBeInstanceOf(errorClass);
+  await expect(runSync(shopify.admin, upsert(quote.id))).rejects.toBeInstanceOf(ShopifyThrottled);
   expect(shopify.drafts).toHaveLength(0);
+  const released = await load(quote.id);
+  expect(released.syncStatus).toBe("QUEUED");
+  expect(released.syncClaimedAt).toBeNull();
+
+  await runSync(shopify.admin, upsert(quote.id)); // no backdating needed
+
+  expect(shopify.drafts).toHaveLength(1);
+  expect((await load(quote.id)).syncStatus).toBe("SYNCED");
+});
+
+// Scenario 5b: 5xx or a lost connection may have happened in Shopify, so the quote stays claimed
+// until the stale window; the retry then finds or creates exactly one draft order.
+test.each<Fault>(["http500", "network"])("create fails with %s: kept claimed, the stale retry makes one draft order", async (fault) => {
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", fault);
+  const quote = await testQuote(SHOP, { overrides: { syncStatus: "QUEUED" } });
+
+  await expect(runSync(shopify.admin, upsert(quote.id))).rejects.toThrow();
   expect((await load(quote.id)).syncStatus).toBe("SYNCING");
 
   await backdateClaim(quote.id);
@@ -68,9 +81,21 @@ test.each<[Fault, unknown]>([
 
   expect(shopify.drafts).toHaveLength(1);
   expect(shopify.callsOf("VendoraDraftOrderCreate")).toBe(2);
+  expect((await load(quote.id)).draftOrderId).toBe(shopify.drafts[0].id);
+});
+
+test("access denied (missing scope or plan): FAILED with SYNC_FAILED, not retried", async () => {
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", "accessDenied");
+  const quote = await testQuote(SHOP, { overrides: { syncStatus: "QUEUED" } });
+
+  await runSync(shopify.admin, upsert(quote.id)); // returns: pg-boss doesn't retry
+
   const saved = await load(quote.id);
-  expect(saved.syncStatus).toBe("SYNCED");
-  expect(saved.draftOrderId).toBe(shopify.drafts[0].id);
+  expect(saved.syncStatus).toBe("FAILED");
+  expect(saved.syncError).toMatch(/^Missing permission/);
+  expect(codes(saved.attention)).toEqual(["SYNC_FAILED"]);
+  expect(shopify.drafts).toHaveLength(0);
 });
 
 test("scenario 1: the order webhook arrives twice (later update too): one ORDERED transition", async () => {

@@ -69,5 +69,5 @@ const enqueue = async (
   return jobId;
 };
 
-export { enqueue, getBoss };
+export { QUEUES, enqueue, getBoss };
 export type { QueueName };

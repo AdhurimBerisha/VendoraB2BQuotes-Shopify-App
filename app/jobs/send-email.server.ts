@@ -2,6 +2,7 @@ import { renderEmail } from "../emails/templates";
 import { createI18n } from "../lib/i18n";
 import type { SendEmailJob } from "../models/notify.server";
 import { isInstalled } from "../models/shop.server";
+import { recordHealth } from "../models/health.server";
 
 // Resend's send API is one POST, so no SDK (https://resend.com/docs/api-reference/emails/send-email).
 const RESEND_URL = "https://api.resend.com/emails";
@@ -36,6 +37,9 @@ const runSendEmail = async (
       ...(options.jobId ? { "Idempotency-Key": `send-email-${options.jobId}` } : {}),
     },
     body: JSON.stringify({ from, to: job.to, subject, html, text, tags: [{ name: "type", value: job.type }] }),
+  }).catch((error: unknown) => {
+    recordHealth("email", false); // network: Resend unreachable
+    throw error;
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { name?: unknown; message?: unknown };
@@ -44,9 +48,11 @@ const runSendEmail = async (
       console.error("email rejected by Resend, not retried", details);
       return;
     }
+    recordHealth("email", false);
     console.warn("email failed, will retry", details);
     throw new Error(`Resend responded ${response.status}`);
   }
+  recordHealth("email", true);
   console.log("email sent", { shop: job.shop, type: job.type });
 };
 

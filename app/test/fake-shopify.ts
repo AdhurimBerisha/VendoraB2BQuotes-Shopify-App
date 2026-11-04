@@ -193,6 +193,12 @@ const fakeShopify = ({
       const profiles = [{ id: "gid://shopify/CompanyContact/7", roleAssignments: { nodes: roles } }];
       return Response.json({ data: { customer: { companyContactProfiles: profiles } } });
     }
+    if (query.includes("VendoraTagsRemove")) {
+      const draft = find(variables.id);
+      if (!draft) return Response.json({ data: { tagsRemove: { userErrors: [{ field: null, message: "Not found" }] } } });
+      draft.tags = draft.tags.filter((tag) => !variables.tags.includes(tag));
+      return Response.json({ data: { tagsRemove: { userErrors: [] } } });
+    }
     if (query.includes("VendoraTagsAdd")) {
       const draft = find(variables.id);
       if (!draft) return Response.json({ data: { tagsAdd: { userErrors: [{ field: null, message: "Not found" }] } } });

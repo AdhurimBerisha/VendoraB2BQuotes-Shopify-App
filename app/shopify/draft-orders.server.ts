@@ -214,6 +214,21 @@ const addDraftTags = async (admin: AdminApiContext, id: string, tags: string[]) 
   throwOnUserErrors(data?.tagsAdd?.userErrors);
 };
 
+// TAG_COLLISION → "Create a new draft order": our tag comes off the other company's draft (M4.2).
+const removeDraftTags = async (admin: AdminApiContext, id: string, tags: string[]) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      mutation VendoraTagsRemove($id: ID!, $tags: [String!]!) {
+        tagsRemove(id: $id, tags: $tags) { userErrors { field message } }
+      }`,
+      { variables: { id, tags } },
+    ),
+  );
+  const { data } = await response.json();
+  throwOnUserErrors(data?.tagsRemove?.userErrors);
+};
+
 // What the quote page shows about the draft order: Shopify's final totals and the order.
 // Needs read_orders (order); kept apart from getDraftOrder so syncing never depends on it.
 const getDraftOrderSummary = async (admin: AdminApiContext, id: string) => {
@@ -265,6 +280,7 @@ export {
   getDraftOrderSummary,
   getSubmittedDraft,
   quoteTag,
+  removeDraftTags,
   sendInvoice,
   toMailingAddress,
   updateDraftOrder,

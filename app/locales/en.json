@@ -1,5 +1,5 @@
 {
-  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "settings": "Settings" },
+  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "jobs": "Jobs", "settings": "Settings" },
   "common": { "save": "Save" },
   "roles": { "OWNER": "Owner", "MANAGER": "Manager", "REP": "Sales rep", "VIEWER": "Viewer" },
   "errors": {
@@ -207,9 +207,11 @@
       "adopted": "linked the existing draft order",
       "failed": "Shopify rejected the draft order",
       "tag_collision": "found another draft order with this quote's tag",
-      "deleted": "deleted the draft order"
+      "deleted": "deleted the draft order",
+      "gave_up": "stopped retrying the sync"
     },
-    "attention": { "raised": "flagged a problem" },
+    "attention": { "raised": "flagged a problem", "resolved": "resolved a problem" },
+    "job": { "retried": "retried failed background work" },
     "invoice": { "failed": "the invoice couldn't be sent" },
     "import": { "committed": "imported lines from a CSV file" }
   },
@@ -258,7 +260,44 @@
     "PRICE_MISMATCH": "Shopify's subtotal differs from the quote, so the invoice wasn't sent.",
     "INVOICE_FAILED": "The invoice couldn't be sent: {{message}}",
     "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed.",
-    "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}"
+    "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}",
+    "RETRIES_EXHAUSTED": "We couldn't reach Shopify after several tries: {{message}}",
+    "actions": {
+      "retry": "Retry",
+      "createNew": "Create a new draft order",
+      "recreate": "Recreate the draft order",
+      "cancel": "Cancel quote",
+      "overwrite": "Overwrite with the quote",
+      "acceptShopify": "Keep Shopify's version (new version)",
+      "editQuote": "Edit quote",
+      "revise": "Start a new version",
+      "retrySend": "Send again",
+      "dismiss": "Dismiss"
+    },
+    "errors": {
+      "gone": "This problem was already resolved. Reload the page.",
+      "noLines": "Shopify's draft order has no products we can quote."
+    }
+  },
+  "degraded": {
+    "shopify": "Shopify is responding slowly. Your changes are saved and will sync automatically.",
+    "email": "Emails are delayed. They are queued and will be sent automatically."
+  },
+  "jobs": {
+    "title": "Jobs",
+    "empty": "No failed background work. Everything that went wrong was retried successfully.",
+    "columns": { "queue": "Task", "quote": "Quote", "error": "Last error", "attempts": "Attempts", "failedAt": "Failed", "action": "Action" },
+    "retry": "Retry",
+    "retryLabel": "Retry {{queue}}",
+    "queues": {
+      "sync-draft-order": "Sync draft order",
+      "send-invoice": "Send invoice",
+      "process-webhook": "Shopify update",
+      "import-csv": "CSV import",
+      "privacy": "Privacy request",
+      "send-email": "Email",
+      "expire-quotes": "Expire quotes"
+    }
   },
   "import": {
     "title": "Import lines into {{label}}",
