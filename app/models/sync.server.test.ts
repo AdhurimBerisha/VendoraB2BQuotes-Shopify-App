@@ -104,7 +104,8 @@ test("overrides and discounts are sent; a zero discount is not", async () => {
 });
 
 test("crash after Shopify created the order: retry adopts it, no duplicate", async () => {
-  const shopify = fakeShopify({ crashAfterCreate: true });
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", "crashAfterCommit");
   const quote = await queuedQuote();
 
   await expect(runSync(shopify.admin, upsert(quote.id))).rejects.toThrow("socket hang up");
@@ -157,7 +158,8 @@ test("a synced quote syncs again with an update, not a second draft order", asyn
 });
 
 test("Shopify rejects the input: FAILED with SYNC_FAILED", async () => {
-  const shopify = fakeShopify({ createErrors: ["Variant is invalid"] });
+  const shopify = fakeShopify();
+  shopify.failNext("VendoraDraftOrderCreate", "userErrors");
   const quote = await queuedQuote();
 
   await runSync(shopify.admin, upsert(quote.id));
@@ -278,8 +280,9 @@ test("send-invoice runs twice: one invoice", async () => {
 });
 
 test("send-invoice crashes after Shopify sent it: the retry doesn't send again", async () => {
-  const crashing = fakeShopify({ crashAfterInvoice: true });
+  const crashing = fakeShopify();
   const job = await syncedApprovedQuote(crashing);
+  crashing.failNext("VendoraInvoiceSend", "crashAfterCommit");
 
   await expect(runSendInvoice(crashing.admin, job)).rejects.toThrow("socket hang up");
   expect((await load(job.quoteId)).status).toBe("APPROVED");
