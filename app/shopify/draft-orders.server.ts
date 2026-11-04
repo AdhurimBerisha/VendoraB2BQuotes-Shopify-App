@@ -181,6 +181,39 @@ const getDraftOrder = async (admin: AdminApiContext, id: string) => {
   return data?.draftOrder ?? null;
 };
 
+// A draft order made outside Vendora (e.g. a B2B checkout submitted for review, M3.5).
+const getSubmittedDraft = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraSubmittedDraft($id: ID!) {
+        draftOrder(id: $id) {
+          id tags
+          lineItems(first: 250) { nodes { quantity variant { id } } }
+          purchasingEntity { ... on PurchasingCompany { company { id } location { id } contact { id customer { id } } } }
+        }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.draftOrder ?? null;
+};
+
+const addDraftTags = async (admin: AdminApiContext, id: string, tags: string[]) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      mutation VendoraTagsAdd($id: ID!, $tags: [String!]!) {
+        tagsAdd(id: $id, tags: $tags) { userErrors { field message } }
+      }`,
+      { variables: { id, tags } },
+    ),
+  );
+  const { data } = await response.json();
+  throwOnUserErrors(data?.tagsAdd?.userErrors);
+};
+
 // What the quote page shows about the draft order: Shopify's final totals and the order.
 // Needs read_orders (order); kept apart from getDraftOrder so syncing never depends on it.
 const getDraftOrderSummary = async (admin: AdminApiContext, id: string) => {
@@ -223,12 +256,14 @@ const sendInvoice = async (
 };
 
 export {
+  addDraftTags,
   createDraftOrder,
   deleteDraftOrder,
   draftOrderInput,
   findDraftOrdersByTag,
   getDraftOrder,
   getDraftOrderSummary,
+  getSubmittedDraft,
   quoteTag,
   sendInvoice,
   toMailingAddress,

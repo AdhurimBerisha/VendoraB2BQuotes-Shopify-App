@@ -45,6 +45,7 @@ const manageData = (
       nextQuoteNumber: shop?.nextQuoteNumber ?? 1001,
       defaultExpiryDays: shop?.defaultExpiryDays ?? 30,
       reserveInventory: shop?.reserveInventory ?? false,
+      importSubmittedDrafts: shop?.importSubmittedDrafts ?? false,
       notifyEmails: shop?.notifyEmails.join(", ") ?? "",
     },
     branding: {
@@ -217,6 +218,13 @@ function GeneralSection({ general }: { general: ManageData["general"] }) {
             name="reserveInventory"
             value="on"
             checked={general.reserveInventory}
+          ></s-switch>
+          <s-switch
+            label={t("settings.general.importSubmittedDrafts")}
+            details={t("settings.general.importSubmittedDraftsHelp")}
+            name="importSubmittedDrafts"
+            value="on"
+            checked={general.importSubmittedDrafts}
           ></s-switch>
           <s-text-field
             label={t("settings.general.notifyEmails")}

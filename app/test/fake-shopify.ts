@@ -64,6 +64,7 @@ type FakeDraft = {
   locationId: string;
   input: Record<string, unknown>;
   invoiceSentAt: string | null;
+  lines?: { variantId: string | null; quantity: number }[]; // a draft made outside Vendora (M3.5)
 };
 
 const userErrorsJson = (field: string, messages: string[]) =>
@@ -155,6 +156,33 @@ const fakeShopify = ({
         },
       });
     }
+    if (query.includes("VendoraSubmittedDraft")) {
+      const draft = find(variables.id);
+      return Response.json({
+        data: {
+          draftOrder: draft && {
+            id: draft.id,
+            tags: draft.tags,
+            lineItems: {
+              nodes: (draft.lines ?? []).map((line) => ({
+                quantity: line.quantity,
+                variant: line.variantId ? { id: line.variantId } : null,
+              })),
+            },
+            // An empty companyId stands for a consumer (non-company) draft order.
+            purchasingEntity: draft.companyId
+              ? { company: { id: draft.companyId }, location: { id: draft.locationId }, contact: null }
+              : { id: "gid://shopify/Customer/9" },
+          },
+        },
+      });
+    }
+    if (query.includes("VendoraTagsAdd")) {
+      const draft = find(variables.id);
+      if (!draft) return Response.json({ data: { tagsAdd: { userErrors: [{ field: null, message: "Not found" }] } } });
+      draft.tags = [...new Set([...draft.tags, ...variables.tags])];
+      return Response.json({ data: { tagsAdd: { userErrors: [] } } });
+    }
     if (query.includes("VendoraInvoiceSend")) {
       calls.invoice++;
       const draft = find(variables.id);
@@ -200,7 +228,7 @@ const fakeShopify = ({
   };
 
   // A draft order that already exists in Shopify (e.g. made by someone else, or by a crashed attempt).
-  const seedDraft = (draft: { tags: string[]; companyId: string; locationId: string }) => {
+  const seedDraft = (draft: Pick<FakeDraft, "tags" | "companyId" | "locationId" | "lines">) => {
     const seeded: FakeDraft = { id: `gid://shopify/DraftOrder/${drafts.length + 1}`, input: {}, invoiceSentAt: null, ...draft };
     drafts.push(seeded);
     return seeded;

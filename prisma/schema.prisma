@@ -154,6 +154,7 @@ model Shop {
   defaultExpiryDays Int       @default(30)
   approvalRules     Json      @default("{\"maxDiscountPct\":15,\"maxTotalByCurrency\":{},\"alwaysRequire\":false,\"requireDifferentApprover\":true}")
   reserveInventory  Boolean   @default(false)
+  importSubmittedDrafts Boolean @default(false) // M3.5: company draft orders made outside Vendora become quotes
   notifyEmails      String[]  @default([])
   logoUrl           String?
   quoteTerms        String?

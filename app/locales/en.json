@@ -372,7 +372,8 @@
         "expiringSoon": "My quote expires in 3 days",
         "needsAttention": "A quote needs attention (managers)",
         "quoteDeclined": "A buyer declined my quote",
-        "changesRequested": "A buyer asked for changes to my quote"
+        "changesRequested": "A buyer asked for changes to my quote",
+        "quoteRequested": "A new quote request came in (managers)"
       }
     },
     "errors": {
@@ -389,6 +390,8 @@
       "expiryDays": "Quotes expire after (days)",
       "reserveInventory": "Reserve stock while a quote is open",
       "reserveInventoryHelp": "Draft orders hold the items until the quote expires.",
+      "importSubmittedDrafts": "Turn company draft orders into quotes",
+      "importSubmittedDraftsHelp": "Draft orders for a company made outside Vendora become draft quotes: B2B checkouts submitted for review, and draft orders made in the Shopify admin.",
       "notifyEmails": "Notification emails",
       "notifyEmailsHelp": "Comma-separated. Vendora emails these addresses when a quote needs someone.",
       "save": "Save general settings"
@@ -438,7 +441,8 @@
     "expiringSoon": { "subject": "Expires {{date}}: {{quoteLabel}}", "body": "{{quoteLabel}} expires on {{date}}. Extend the date or follow up with the buyer.", "action": "Open quote" },
     "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" },
     "quoteDeclined": { "subject": "Declined: {{quoteLabel}}", "body": "The buyer declined {{quoteLabel}}. Their reason:", "action": "Open quote" },
-    "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" }
+    "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" },
+    "quoteRequested": { "subject": "New quote request: {{quoteLabel}}", "body": "A company draft order made outside Vendora (usually a checkout submitted for review) is now {{quoteLabel}}, a draft quote with no one assigned. Check the prices, then submit it.", "action": "Open quote" }
   },
   "publicQuote": {
     "title": "Quote {{number}} – version {{version}}",

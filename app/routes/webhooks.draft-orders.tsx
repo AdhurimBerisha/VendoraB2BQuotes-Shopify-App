@@ -3,7 +3,7 @@ import { authenticate } from "../shopify.server";
 import { enqueue } from "../jobs/queue.server";
 import { forgetWebhook, recordWebhookOnce } from "../models/webhook-events.server";
 
-// draft_orders/update and draft_orders/delete. Same shape as webhooks.products.tsx.
+// draft_orders/create, draft_orders/update and draft_orders/delete. Same shape as webhooks.products.tsx.
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { topic, shop, payload, webhookId, eventId } = await authenticate.webhook(request);
 
