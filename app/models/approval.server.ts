@@ -18,6 +18,9 @@ const submitQuote = async (actor: StaffActor, quoteId: string) => {
   await refreshPrices(actor, quoteId); // throws quote.errors.pricesChanged if catalog prices moved
 
   const result = await db.$transaction(async (tx) => {
+    // Lock the quote row first (M4.4): a save in flight finishes before we read its lines, and a
+    // save sent later from an already-open page gets changedByOther instead of editing a locked version.
+    await tx.quote.updateMany({ where: { id: quoteId, shop: actor.shop }, data: { lockVersion: { increment: 1 } } });
     const quote = await tx.quote.findFirst({
       where: { id: quoteId, shop: actor.shop },
       include: { currentVersion: { include: { lines: true } } },

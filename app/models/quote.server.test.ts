@@ -94,6 +94,23 @@ test("saving with a stale lockVersion is rejected", async () => {
   ).rejects.toMatchObject({ key: "quote.errors.changedByOther" });
 });
 
+test("two saves with the same lockVersion at once: one wins, lines are the winner's", async () => {
+  const quote = await testQuote(SHOP);
+
+  const results = await Promise.allSettled([
+    saveDraftLines(actor(), quote.id, 0, [line(1, 3)], null),
+    saveDraftLines(actor(), quote.id, 0, [line(2, 7)], null),
+  ]);
+
+  expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+  const loser = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+  expect(loser.reason).toMatchObject({ key: "quote.errors.changedByOther" });
+  const winner = results[0].status === "fulfilled" ? line(1, 3) : line(2, 7);
+  const reloaded = await getQuote(SHOP, quote.id);
+  expect(reloaded.lockVersion).toBe(1);
+  expect(reloaded.currentVersion!.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity }))).toEqual([winner]);
+});
+
 test("a locked version can't be edited", async () => {
   const quote = await testQuote(SHOP);
   await db.quoteVersion.update({

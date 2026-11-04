@@ -26,10 +26,27 @@ type GraphqlErrorLike = { extensions?: { code?: string }; message?: string };
 //  - GraphqlQueryError (HTTP 200 with GraphQL errors): error.body.errors.graphQLErrors[].extensions.code
 //  - HttpThrottlingError (429) / HttpInternalError (5xx) / HttpResponseError: error.response.code
 //  - HttpRequestError: no response at all (network) → unclassified
+type ThrottleStatus = { maximumAvailable: number; currentlyAvailable: number; restoreRate: number };
+
+// M4.4: warn when a shop's query budget runs low. If this shows up often, add a per-shop
+// concurrency limit (pg-boss singletonKey: shop on a "shopify-heavy" queue).
+const warnIfLowBudget = async (result: unknown) => {
+  if (!(result instanceof Response)) return;
+  const body = (await result
+    .clone()
+    .json()
+    .catch(() => null)) as { extensions?: { cost?: { throttleStatus?: ThrottleStatus } } } | null;
+  const status = body?.extensions?.cost?.throttleStatus;
+  if (status && status.currentlyAvailable < status.maximumAvailable * 0.2) {
+    console.warn("shopify query budget low", status);
+  }
+};
+
 const call = async <T>(fn: () => Promise<T>): Promise<T> => {
   try {
     const result = await fn();
     recordHealth("shopify", true);
+    await warnIfLowBudget(result);
     return result;
   } catch (error) {
     if (error instanceof Response) throw error; // re-auth / redirect from the library
