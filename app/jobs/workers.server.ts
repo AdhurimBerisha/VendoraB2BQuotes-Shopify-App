@@ -4,6 +4,7 @@ import { runPrivacy, type PrivacyJob } from "./privacy.server";
 import type { SendEmailJob } from "../models/notify.server";
 import { type SendInvoiceJob, type SyncJob, giveUpInvoice, giveUpSync } from "../models/sync.server";
 import { runExpireQuotes } from "./expire-quotes.server";
+import { runReconcileAll, runReconcileShop } from "./reconcile.server";
 import { type ImportCsvJob, runImportCsv } from "./import-csv.server";
 import { type ProcessWebhookJob, runProcessWebhook } from "./process-webhook.server";
 import { runSendEmail } from "./send-email.server";
@@ -54,6 +55,9 @@ const startWorkers = async () => {
   await boss.work<ImportCsvJob>("import-csv", one, handle("import-csv", (job) => runImportCsv(job.data)));
   await boss.work("expire-quotes", one, handle("expire-quotes", () => runExpireQuotes()));
   await boss.schedule("expire-quotes", "0 * * * *"); // upsert: safe on every start
+  await boss.work("reconcile-all", one, handle("reconcile-all", () => runReconcileAll()));
+  await boss.schedule("reconcile-all", "0 3 * * *"); // 03:00 UTC nightly
+  await boss.work<{ shop: string }>("reconcile", one, handle("reconcile", (job) => runReconcileShop(job.data.shop)));
   await boss.work<PrivacyJob>("privacy", one, handle("privacy", (job) => runPrivacy(job.data)));
   await boss.work<SendEmailJob>("send-email", one, handle("send-email", (job) => runSendEmail(job.data, { jobId: job.id })));
   console.log("[workers] started");

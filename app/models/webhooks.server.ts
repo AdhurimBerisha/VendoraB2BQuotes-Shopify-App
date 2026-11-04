@@ -203,4 +203,4 @@ const onProductGone = async (
   console.log("product lines flagged", { shop, productId, code, lines: lines.length });
 };
 
-export { processWebhook };
+export { linesKey, processWebhook };

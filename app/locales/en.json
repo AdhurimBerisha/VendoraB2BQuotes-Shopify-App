@@ -262,6 +262,7 @@
     "ORDER_ON_CLOSED_QUOTE": "An order was placed for a quote that was already closed.",
     "CHANGES_REQUESTED": "The buyer asked for changes: {{message}}",
     "RETRIES_EXHAUSTED": "We couldn't reach Shopify after several tries: {{message}}",
+    "OUT_OF_STOCK": "Stock is now lower than the quoted quantity: {{message}}",
     "actions": {
       "retry": "Retry",
       "createNew": "Create a new draft order",
@@ -296,7 +297,9 @@
       "import-csv": "CSV import",
       "privacy": "Privacy request",
       "send-email": "Email",
-      "expire-quotes": "Expire quotes"
+      "expire-quotes": "Expire quotes",
+      "reconcile-all": "Nightly check (all shops)",
+      "reconcile": "Nightly check with Shopify"
     }
   },
   "import": {

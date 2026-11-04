@@ -172,6 +172,8 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
     ? await drafts.updateDraftOrder(admin, draftOrderId, input)
     : await drafts.createDraftOrder(admin, input);
 
+  if (!draftOrderId) measureSearchLag(admin, quote.id);
+
   // Read back Shopify's subtotal: it applies catalog prices itself, so ours could differ.
   const after = await drafts.getDraftOrder(admin, result.id);
   const shopifySubtotal = after ? D(after.subtotalPriceSet.presentmentMoney.amount) : null;
@@ -211,6 +213,25 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
       await enqueue("send-invoice", sendJob, { singletonKey: version.id, tx });
     }
   });
+};
+
+// B-7: the crash-retry adopts a draft order by tag search, which relies on Shopify's search index
+// catching up within STALE_MS. For 1 in 10 creates, log how long that takes (never in tests).
+// Alert on "NOT searchable" in the logs. Fire-and-forget: it never delays or fails the sync.
+const SEARCH_LAG_SAMPLE = 0.1;
+const measureSearchLag = (admin: AdminApiContext, quoteId: string) => {
+  if (process.env.NODE_ENV === "test" || Math.random() >= SEARCH_LAG_SAMPLE) return;
+  void (async () => {
+    const start = Date.now();
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      if ((await drafts.findDraftOrdersByTag(admin, quoteId)).length) {
+        console.log("search_lag: draft order searchable", { quoteId, ms: Date.now() - start });
+        return;
+      }
+    }
+    console.warn("search_lag: draft order NOT searchable after 60 s", { quoteId, ms: Date.now() - start });
+  })().catch((error: unknown) => console.warn("search_lag: measurement failed", { quoteId, error: String(error) }));
 };
 
 const doDelete = async (admin: AdminApiContext, quote: { id: string; shop: string; draftOrderId: string | null }) => {

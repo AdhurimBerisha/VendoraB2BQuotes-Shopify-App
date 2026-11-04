@@ -12,7 +12,8 @@ type AttentionCode =
   | "INVOICE_FAILED"
   | "ORDER_ON_CLOSED_QUOTE"
   | "CHANGES_REQUESTED" // the buyer asked for changes (M3.4); cleared when a new version starts
-  | "RETRIES_EXHAUSTED"; // a background sync failed every retry (M4.2)
+  | "RETRIES_EXHAUSTED" // a background sync failed every retry (M4.2)
+  | "OUT_OF_STOCK"; // the nightly check found less stock than a sent quote's quantities (M4.3)
 type AttentionItem = {
   code: AttentionCode;
   message?: string;
@@ -34,6 +35,7 @@ const ATTENTION_ACTIONS = {
   CHANGES_REQUESTED: ["revise"],
   INVOICE_FAILED: ["retrySend"],
   ORDER_ON_CLOSED_QUOTE: ["dismiss"],
+  OUT_OF_STOCK: ["dismiss", "revise"],
 } as const satisfies Record<AttentionCode, readonly string[]>;
 type AttentionAction = (typeof ATTENTION_ACTIONS)[AttentionCode][number];
 

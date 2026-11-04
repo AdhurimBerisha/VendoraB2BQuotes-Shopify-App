@@ -17,6 +17,9 @@ const QUEUES = {
   // Scheduled hourly; a failed run is simply retried by the next one.
   "expire-quotes": { retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 },
   privacy: { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
+  // Nightly (M4.3): reconcile-all fans out one reconcile job per shop; a missed night is caught the next.
+  "reconcile-all": { retryLimit: 2, retryDelay: 300, expireInSeconds: 600 },
+  reconcile: { retryLimit: 3, retryDelay: 600, retryBackoff: true, expireInSeconds: 1800 },
   // A provider outage or a bad token only delays emails (scenario 13).
   "send-email": { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
 };
@@ -60,7 +63,7 @@ const getBoss = (): Promise<PgBoss> => {
 const enqueue = async (
   name: QueueName,
   data: object,
-  options: { singletonKey?: string; tx?: Prisma.TransactionClient } = {},
+  options: { singletonKey?: string; startAfter?: number; tx?: Prisma.TransactionClient } = {},
 ) => {
   const { tx, ...rest } = options;
   const boss = await getBoss();

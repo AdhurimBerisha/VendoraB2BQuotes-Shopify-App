@@ -229,6 +229,25 @@ const removeDraftTags = async (admin: AdminApiContext, id: string, tags: string[
   throwOnUserErrors(data?.tagsRemove?.userErrors);
 };
 
+// The nightly reconcile (M4.3): state, order and lines, to catch webhooks we missed.
+const getDraftForReconcile = async (admin: AdminApiContext, id: string) => {
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraReconcileDraft($id: ID!) {
+        draftOrder(id: $id) {
+          id status updatedAt
+          order { id }
+          lineItems(first: 250) { nodes { quantity variant { id } } }
+        }
+      }`,
+      { variables: { id } },
+    ),
+  );
+  const { data } = await response.json();
+  return data?.draftOrder ?? null;
+};
+
 // What the quote page shows about the draft order: Shopify's final totals and the order.
 // Needs read_orders (order); kept apart from getDraftOrder so syncing never depends on it.
 const getDraftOrderSummary = async (admin: AdminApiContext, id: string) => {
@@ -277,6 +296,7 @@ export {
   draftOrderInput,
   findDraftOrdersByTag,
   getDraftOrder,
+  getDraftForReconcile,
   getDraftOrderSummary,
   getSubmittedDraft,
   quoteTag,

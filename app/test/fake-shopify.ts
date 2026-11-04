@@ -76,7 +76,9 @@ type FakeDraft = {
   locationId: string;
   input: Record<string, unknown>;
   invoiceSentAt: string | null;
-  lines?: { variantId: string | null; quantity: number }[]; // a draft made outside Vendora (M3.5)
+  lines?: { variantId: string | null; quantity: number }[]; // a draft made outside Vendora (M3.5), or edited in Shopify
+  status?: "OPEN" | "INVOICE_SENT" | "COMPLETED";
+  orderId?: string;
 };
 
 const userErrorsJson = (field: string, messages: string[]) =>
@@ -163,6 +165,26 @@ const fakeShopify = ({
             updatedAt: now(),
             invoiceSentAt: draft.invoiceSentAt,
             subtotalPriceSet: { presentmentMoney: { amount: subtotal, currencyCode: "USD" } },
+          },
+        },
+      });
+    }
+    if (query.includes("VendoraReconcileDraft")) {
+      const draft = find(variables.id);
+      const inputLines = (draft?.input.lineItems as { variantId: string; quantity: number }[] | undefined) ?? [];
+      return Response.json({
+        data: {
+          draftOrder: draft && {
+            id: draft.id,
+            status: draft.status ?? (draft.invoiceSentAt ? "INVOICE_SENT" : "OPEN"),
+            updatedAt: now(),
+            order: draft.orderId ? { id: draft.orderId } : null,
+            lineItems: {
+              nodes: (draft.lines ?? inputLines).map((line) => ({
+                quantity: line.quantity,
+                variant: line.variantId ? { id: line.variantId } : null,
+              })),
+            },
           },
         },
       });
@@ -277,6 +299,21 @@ const fakeShopify = ({
     calls,
     creates: () => calls.create,
     callsOf: (op: string) => opCalls[op] ?? 0,
+    // Things done in Shopify that Vendora only hears about by webhook (or the nightly reconcile).
+    completeDraft: (id: string, orderId = "gid://shopify/Order/1") => {
+      const draft = find(id);
+      if (!draft) throw new Error(`no draft ${id}`);
+      Object.assign(draft, { status: "COMPLETED", orderId });
+    },
+    editDraftInShopify: (id: string, lines: { variantId: string; quantity: number }[]) => {
+      const draft = find(id);
+      if (!draft) throw new Error(`no draft ${id}`);
+      draft.lines = lines;
+    },
+    deleteDraftInShopify: (id: string) => {
+      const index = drafts.findIndex((draft) => draft.id === id);
+      if (index !== -1) drafts.splice(index, 1);
+    },
     failNext: (op: string, ...next: Fault[]) => {
       faults[op] = [...(faults[op] ?? []), ...next];
     },

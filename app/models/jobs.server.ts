@@ -9,9 +9,12 @@ import { requirePermission } from "./permissions";
 
 // Jobs page (M4.2): background work of this shop that failed every retry. pg-boss moved it to
 // "<queue>-dead"; Retry moves it back (redrive). Every query filters by the shop's id in the
-// job data: one shop never sees another's jobs. expire-quotes runs for all shops, so it isn't listed.
-const SHOP_QUEUES = (Object.keys(QUEUES) as QueueName[]).filter((name) => name !== "expire-quotes");
-type ShopQueue = Exclude<QueueName, "expire-quotes">;
+// job data: one shop never sees another's jobs. Jobs for all shops at once aren't listed.
+const ALL_SHOPS = ["expire-quotes", "reconcile-all"] as const;
+type ShopQueue = Exclude<QueueName, (typeof ALL_SHOPS)[number]>;
+const SHOP_QUEUES = (Object.keys(QUEUES) as QueueName[]).filter(
+  (name): name is ShopQueue => !(ALL_SHOPS as readonly string[]).includes(name),
+);
 const MAX_ROWS = 50;
 
 type FailedJob = {

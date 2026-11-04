@@ -289,5 +289,5 @@ const diffVersions = (before: { lines: DiffLine[] }, after: { lines: DiffLine[] 
   return diffs;
 };
 
-export { diffVersions, lineRows, priceLines, refreshPrices, reviseQuote, saveDraftLines };
+export { diffVersions, lineProblems, lineRows, priceLines, refreshPrices, reviseQuote, saveDraftLines };
 export type { DraftLineInput, LineDiff };
