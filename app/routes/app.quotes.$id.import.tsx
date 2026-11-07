@@ -52,9 +52,13 @@ const commitSchema = z.object({
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
   const actor = await getActor(request);
-  const form = await request.formData();
 
   return runAction(async () => {
+    // Refuse a big body before formData() reads it into memory; startImport checks the file (5 MB).
+    if (Number(request.headers.get("content-length")) > 6 * 1024 * 1024) {
+      throw new UserError("import.errors.tooLarge", { maxMb: 5 });
+    }
+    const form = await request.formData();
     if (form.get("intent") === "upload") {
       const file = form.get("file");
       if (!(file instanceof File) || file.size === 0) throw new UserError("import.errors.noFile");

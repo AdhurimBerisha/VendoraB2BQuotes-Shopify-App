@@ -4,9 +4,11 @@ import { verifyQuoteToken } from "../lib/signed-token.server";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
 
-// Headers for every /q/* response: not indexed, the token never leaks in a Referer, not cached.
+// Headers for every /q/* response: not indexed, the token never leaks in a Referer, not cached,
+// no MIME sniffing.
 const PUBLIC_HEADERS = {
   "X-Robots-Tag": "noindex",
+  "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "private, no-store",
 };

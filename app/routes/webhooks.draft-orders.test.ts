@@ -22,6 +22,21 @@ afterAll(async () => {
 const callAction = (request: Request) =>
   action({ request, params: {}, context: {} } as Parameters<typeof action>[0]);
 
+test("bad signature is rejected with 401, nothing recorded or queued (M4.5)", async () => {
+  const webhookId = randomUUID();
+  const body = { id: 1, status: "open", order_id: null, updated_at: new Date().toISOString(), line_items: [] };
+  const response = await callAction(
+    webhookRequest(PATH, "draft_orders/update", SHOP, body, { webhookId, badSignature: true }),
+  ).catch((thrown: unknown) => {
+    if (thrown instanceof Response) return thrown; // authenticate.webhook throws Responses
+    throw thrown;
+  });
+
+  expect(response.status).toBe(401);
+  expect(await db.webhookEvent.count({ where: { id: webhookId } })).toBe(0);
+  expect(enqueueMock).not.toHaveBeenCalled();
+});
+
 test("the same delivery twice queues one process-webhook job", async () => {
   const webhookId = randomUUID();
   const body = { id: 1, status: "open", order_id: null, updated_at: new Date().toISOString(), line_items: [] };

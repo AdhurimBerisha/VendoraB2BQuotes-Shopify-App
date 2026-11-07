@@ -46,12 +46,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       expires: quote.expiresAt?.toISOString() ?? "",
       updated: quote.updatedAt.toISOString(),
     })),
+    { escapeFormulae: true }, // a company name starting with = + - @ must not run as a spreadsheet formula
   );
   console.log("quotes exported", { shop: actor.shop, rows: quotes.length });
   return new Response(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="vendora-quotes.csv"',
+      "X-Content-Type-Options": "nosniff",
     },
   });
 };
