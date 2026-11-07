@@ -25,10 +25,12 @@ import {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
-  const notifications = await getNotificationPrefs(actor);
-  if (!can(actor, "settings.manage")) return { notifications, manage: null };
-  const staff = await listStaff(actor.shop);
-  const shop = await getShop(actor.shop);
+  if (!can(actor, "settings.manage")) return { notifications: await getNotificationPrefs(actor), manage: null };
+  const [notifications, staff, shop] = await Promise.all([
+    getNotificationPrefs(actor),
+    listStaff(actor.shop),
+    getShop(actor.shop),
+  ]);
   return {
     notifications,
     manage: manageData(shop, staff),

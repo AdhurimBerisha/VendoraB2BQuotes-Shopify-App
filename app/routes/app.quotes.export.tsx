@@ -30,7 +30,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const companyIds = [...new Set(quotes.map((quote) => quote.companyId))];
   const names = new Map<string, string>();
   for (let i = 0; i < companyIds.length; i += NAMES_BATCH) {
-    for (const [id, name] of await companyNames(actor.admin, companyIds.slice(i, i + NAMES_BATCH))) names.set(id, name);
+    for (const [id, name] of await companyNames(actor.admin, actor.shop, companyIds.slice(i, i + NAMES_BATCH))) names.set(id, name);
   }
   const staff = new Map((await listStaff(actor.shop)).map((member) => [member.shopifyUserId, member.displayName]));
 

@@ -52,22 +52,44 @@ const getContact = async (admin: AdminApiContext, id: string) => {
   return data?.companyContact ?? null;
 };
 
+// M4.6: names looked up in the last 5 minutes, per shop, so paging and filtering the quote list
+// usually skips the Shopify call. A renamed company shows its old name for up to 5 minutes.
+// ponytail: in memory, per process; fine until several instances need a shared cache.
+const NAME_TTL_MS = 5 * 60_000;
+const nameCache = new Map<string, { name: string | null; until: number }>(); // key: `${shop} ${companyId}`
+
 // Company names for a page of quotes, in one call. Deleted companies are missing from the map.
-const companyNames = async (admin: AdminApiContext, ids: string[]) => {
+const companyNames = async (admin: AdminApiContext, shop: string, ids: string[], now = Date.now()) => {
   const names = new Map<string, string>();
-  if (ids.length === 0) return names;
+  const missing: string[] = [];
+  for (const id of ids) {
+    const hit = nameCache.get(`${shop} ${id}`);
+    if (!hit || hit.until <= now) missing.push(id);
+    else if (hit.name !== null) names.set(id, hit.name);
+  }
+  if (missing.length === 0) return names;
+
   const response = await call(() =>
     admin.graphql(
       `#graphql
       query VendoraCompanyNames($ids: [ID!]!) {
         nodes(ids: $ids) { ... on Company { id name } }
       }`,
-      { variables: { ids } },
+      { variables: { ids: missing } },
     ),
   );
   const { data } = await response.json();
+  const found = new Map<string, string>();
   for (const node of data?.nodes ?? []) {
-    if (node && "name" in node) names.set(node.id, node.name);
+    if (node && "name" in node) found.set(node.id, node.name);
+  }
+  if (nameCache.size > 50_000) {
+    for (const [key, entry] of nameCache) if (entry.until <= now) nameCache.delete(key);
+  }
+  for (const id of missing) {
+    const name = found.get(id) ?? null;
+    nameCache.set(`${shop} ${id}`, { name, until: now + NAME_TTL_MS });
+    if (name !== null) names.set(id, name);
   }
   return names;
 };

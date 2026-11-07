@@ -16,8 +16,7 @@ import db from "../db.server";
 // Jobs (M4.2, OWNER/MANAGER): this shop's background work that failed every retry.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
-  const jobs = await listFailedJobs(actor); // checks jobs.retry
-  const shop = await getShop(actor.shop);
+  const [jobs, shop] = await Promise.all([listFailedJobs(actor), getShop(actor.shop)]); // listFailedJobs checks jobs.retry
   const quoteIds = [...new Set(jobs.flatMap((job) => (job.quoteId ? [job.quoteId] : [])))];
   const quotes = await db.quote.findMany({ where: { shop: actor.shop, id: { in: quoteIds } }, select: { id: true, number: true } });
   const numbers = new Map(quotes.map((quote) => [quote.id, quote.number]));
