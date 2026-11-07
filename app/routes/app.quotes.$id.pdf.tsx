@@ -16,6 +16,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${data.numberLabel}-v${data.version}.pdf"`,
       "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 };

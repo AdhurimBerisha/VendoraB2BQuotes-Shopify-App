@@ -1,10 +1,11 @@
+import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import db from "../db.server";
 import { enqueue } from "../jobs/queue.server";
 import { testQuote, testShop } from "../test/factories";
 import type { CustomerActor } from "./actor";
 import { attentionItems } from "./attention";
-import { customerAction, listCustomerQuotes, shopFromDest } from "./customer-quotes.server";
+import { authenticateCustomer, customerAction, listCustomerQuotes, shopFromDest } from "./customer-quotes.server";
 import { redactShop } from "./privacy.server";
 
 vi.mock("../jobs/queue.server", () => ({ enqueue: vi.fn(async () => "job-id"), getBoss: vi.fn(async () => ({})) }));
@@ -46,6 +47,35 @@ const statusOf = async (promise: Promise<unknown>) => {
     return (error as { status?: number }).status;
   }
 };
+
+// A session token signed with the wrong secret, otherwise well-formed (M4.5).
+const forgedToken = () => {
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const body = `${part({ alg: "HS256", typ: "JWT" })}.${part({
+    iss: `https://${SHOP}/admin`,
+    dest: `https://${SHOP}`,
+    aud: process.env.SHOPIFY_API_KEY,
+    sub: "gid://shopify/Customer/1",
+    exp: now + 60,
+    nbf: now - 60,
+    iat: now,
+  })}`;
+  return `${body}.${createHmac("sha256", "not-the-app-secret").update(body).digest("base64url")}`;
+};
+
+test("customer API without a token or with a forged one → 401", async () => {
+  const request = (headers: Record<string, string>) =>
+    new Request("https://vendora.test/api/customer/quotes", { headers: { Origin: "https://extensions.shopifycdn.com", ...headers } });
+  const statusOfAuth = (req: Request) =>
+    authenticateCustomer(req).then(
+      () => 200,
+      (thrown: unknown) => (thrown instanceof Response ? thrown.status : thrown),
+    );
+
+  expect(await statusOfAuth(request({}))).toBe(401);
+  expect(await statusOfAuth(request({ Authorization: `Bearer ${forgedToken()}` }))).toBe(401);
+});
 
 test("shopFromDest: domain with or without https://", () => {
   expect(shopFromDest("https://a.myshopify.com")).toBe("a.myshopify.com");

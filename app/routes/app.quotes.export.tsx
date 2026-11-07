@@ -30,7 +30,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const companyIds = [...new Set(quotes.map((quote) => quote.companyId))];
   const names = new Map<string, string>();
   for (let i = 0; i < companyIds.length; i += NAMES_BATCH) {
-    for (const [id, name] of await companyNames(actor.admin, companyIds.slice(i, i + NAMES_BATCH))) names.set(id, name);
+    for (const [id, name] of await companyNames(actor.admin, actor.shop, companyIds.slice(i, i + NAMES_BATCH))) names.set(id, name);
   }
   const staff = new Map((await listStaff(actor.shop)).map((member) => [member.shopifyUserId, member.displayName]));
 
@@ -46,12 +46,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       expires: quote.expiresAt?.toISOString() ?? "",
       updated: quote.updatedAt.toISOString(),
     })),
+    { escapeFormulae: true }, // a company name starting with = + - @ must not run as a spreadsheet formula
   );
   console.log("quotes exported", { shop: actor.shop, rows: quotes.length });
   return new Response(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="vendora-quotes.csv"',
+      "X-Content-Type-Options": "nosniff",
     },
   });
 };

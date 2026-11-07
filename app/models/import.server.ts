@@ -302,6 +302,7 @@ const reportToCsv = (report: ImportReport) =>
       codes: row.codes.join(" "),
       detail: row.detail ?? "",
     })),
+    { escapeFormulae: true }, // SKUs come from the uploaded file: they must not run as spreadsheet formulas
   );
 
 export { INLINE_ROWS, MAX_ROWS, commitImport, parseCsv, reportToCsv, runValidation, startImport, validateRows };

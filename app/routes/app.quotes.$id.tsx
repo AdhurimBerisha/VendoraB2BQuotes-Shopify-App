@@ -46,9 +46,8 @@ const percentText = (value: Money | null) => (value === null ? "" : value.toStri
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
   requirePermission(actor, "quote.view");
-  const quote = await getQuote(actor.shop, params.id ?? "");
+  const [quote, shop] = await Promise.all([getQuote(actor.shop, params.id ?? ""), getShop(actor.shop)]);
   const version = quote.currentVersion;
-  const shop = await getShop(actor.shop);
   const prefix = shop?.quotePrefix ?? "Q-";
   const timezone = shop?.timezone ?? "UTC";
   const money = (value: Money) => formatMoney(value, quote.currencyCode, actor.locale);

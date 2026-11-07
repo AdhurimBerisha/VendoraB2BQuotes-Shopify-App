@@ -2,7 +2,7 @@ import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
-import { type EntryContext } from "react-router";
+import { type EntryContext, type ServerInstrumentation } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { startWorkers } from "./jobs/workers.server";
@@ -17,6 +17,25 @@ if (process.env.RUN_WORKERS !== "false" && process.env.NODE_ENV !== "test") {
 }
 
 export const streamTimeout = 5000;
+
+// M4.6: how long every loader and action takes (target: p95 under 1 s). One line per call;
+// slow ones are warnings. ponytail: console only; p95 and alerts come with pino/Sentry (M1.7).
+const SLOW_MS = 1000;
+const timed =
+  (routeId: string, kind: "loader" | "action") =>
+  async (handler: () => Promise<{ status: "success" | "error" }>, info: { pattern: string }) => {
+    const start = performance.now();
+    const { status } = await handler();
+    const ms = Math.round(performance.now() - start);
+    const log = ms >= SLOW_MS ? console.warn : console.log;
+    log(ms >= SLOW_MS ? "slow route" : "route timing", { route: routeId, kind, pattern: info.pattern, ms, status });
+  };
+
+export const instrumentations: ServerInstrumentation[] = [
+  {
+    route: (route) => route.instrument({ loader: timed(route.id, "loader"), action: timed(route.id, "action") }),
+  },
+];
 
 export default async function handleRequest(
   request: Request,

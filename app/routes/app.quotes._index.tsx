@@ -18,7 +18,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
   requirePermission(actor, "quote.view");
   const filters = listFiltersSchema.parse(Object.fromEntries(new URL(request.url).searchParams));
-  const shop = await getShop(actor.shop);
+  const [shop, staff] = await Promise.all([getShop(actor.shop), listStaff(actor.shop)]);
   const prefix = shop?.quotePrefix ?? "Q-";
   const timezone = shop?.timezone ?? "UTC";
 
@@ -28,10 +28,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     status: filters.status,
     cursor: filters.cursor,
   });
-  const [names, staff] = await Promise.all([
-    companyNames(actor.admin, [...new Set(quotes.map((quote) => quote.companyId))]),
-    listStaff(actor.shop),
-  ]);
+  const names = await companyNames(actor.admin, actor.shop, [...new Set(quotes.map((quote) => quote.companyId))]);
   const staffNames = new Map(staff.map((member) => [member.shopifyUserId, member.displayName]));
 
   return {
