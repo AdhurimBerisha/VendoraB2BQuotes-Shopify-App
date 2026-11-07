@@ -108,7 +108,10 @@ model QuoteLine {
   lineTotal     Decimal      @db.Decimal(14, 4)
   problems      Json?
 
-  @@index([variantId])
+  // Every page and job reads a version's lines in position order (Postgres doesn't index FKs by itself).
+  @@index([versionId, position])
+  // products/delete and products/update webhooks find lines by product. (No query filters by variantId.)
+  @@index([productId])
 }
 
 // One approval request per submitted version that hit a rule. Decided once, never edited.

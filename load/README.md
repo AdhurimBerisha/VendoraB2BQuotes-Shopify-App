@@ -2,6 +2,14 @@
 
 Not part of the app build. Run against a dev tunnel or staging, never production.
 
+## Database at 50 000 quotes
+`node --env-file=.env load/explain.mjs` (options: `--count=100000`, `--plans` for every plan, `--keep` to leave the data).
+Local database only (it refuses any other host). It fills the shop `load-explain.myshopify.com` with quotes,
+versions, lines and audit events, runs the main queries of the list, dashboard, quote page, webhooks and jobs,
+and prints each one's time and which index it used. Target: every query under 100 ms; `SLOW` and `SEQ`
+(a full table scan) lines also print their plan. The shop is deleted at the end. Start Docker and run
+`npx prisma migrate deploy` first.
+
 ## Webhook burst
 `k6 run -e APP_URL=… -e SHOPIFY_API_SECRET=… -e SHOP=… load/webhook-burst.js`
 Targets: 1 000 deliveries in 50 s, all 200, p95 < 1 s; the `process-webhook` queue drains in < 5 min (Jobs page).
