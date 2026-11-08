@@ -24,7 +24,11 @@ import { fakeShopify } from "./fake-shopify";
 // MODEL_FUNCTIONS lists every exported model function and where its isolation is tested:
 // a new export without an entry fails the last test.
 
-vi.mock("../jobs/queue.server", () => ({ enqueue: vi.fn(async () => "job-id"), getBoss: vi.fn(async () => undefined) }));
+vi.mock("../jobs/queue.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../jobs/queue.server")>()),
+  enqueue: vi.fn(async () => "job-id"),
+  getBoss: vi.fn(async () => undefined),
+}));
 
 const HERE = "isolation.test.ts";
 const NA = (reason: string) => `n/a: ${reason}`;
