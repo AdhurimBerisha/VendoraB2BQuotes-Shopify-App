@@ -114,6 +114,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       location: location?.name ?? null,
       contactName: contact?.customer?.displayName ?? null,
       contactEmail: contact?.customer?.defaultEmailAddress?.emailAddress ?? null,
+      buyerMessage: version?.internalNote ?? null, // set by the storefront quote button (M3.5)
       address: address
         ? [address.recipient, address.address1, address.address2, [address.zip, address.city].filter(Boolean).join(" "), address.countryCode]
             .filter(Boolean)
@@ -457,6 +458,14 @@ function CustomerSection({ customer }: { customer: LoaderData["customer"] }) {
           <s-text>{customer.contactEmail ?? t("quote.customer.noEmail")}</s-text>
         </s-stack>
       </s-grid>
+      {customer.buyerMessage && (
+        <s-box paddingBlockStart="base">
+          <s-stack direction="block" gap="small-200">
+            <s-text type="strong">{t("quote.customer.buyerMessage")}</s-text>
+            <s-paragraph>{customer.buyerMessage}</s-paragraph>
+          </s-stack>
+        </s-box>
+      )}
     </s-section>
   );
 }
