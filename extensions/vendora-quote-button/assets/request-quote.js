@@ -8,6 +8,15 @@
     return block.dataset.msgFailed;
   };
 
+  // Empty cart on a product page: quote the variant and quantity picked in the theme's product form.
+  const productOnPage = (block) => {
+    const productForm = document.querySelector('form[action*="/cart/add"]');
+    const field = (name) => (productForm && productForm.elements.namedItem(name)) || null;
+    const variantId = Number((field("id") && field("id").value) || block.dataset.variantId);
+    const quantity = Math.max(1, Number(field("quantity") && field("quantity").value) || 1);
+    return variantId ? [{ variantId, quantity }] : [];
+  };
+
   document.addEventListener("submit", async (event) => {
     const form = event.target.closest && event.target.closest(".vendora-rfq__form");
     if (!form) return;
@@ -19,7 +28,10 @@
     status.textContent = block.dataset.msgSending;
     try {
       const cart = await (await fetch(`${root}cart.js`)).json();
-      if (!cart.items.length) {
+      const lines = cart.items.length
+        ? cart.items.map((item) => ({ variantId: item.variant_id, quantity: item.quantity }))
+        : productOnPage(block);
+      if (!lines.length) {
         status.textContent = block.dataset.msgEmpty;
         return;
       }
@@ -29,7 +41,7 @@
         body: JSON.stringify({
           locationId: block.dataset.locationId,
           message: form.elements.message ? form.elements.message.value : "",
-          lines: cart.items.map((item) => ({ variantId: item.variant_id, quantity: item.quantity })),
+          lines,
         }),
       });
       const result = await response.json().catch(() => ({}));
