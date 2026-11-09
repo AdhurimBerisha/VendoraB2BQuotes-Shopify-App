@@ -103,6 +103,16 @@ test("overrides and discounts are sent; a zero discount is not", async () => {
   expect(input.appliedDiscount).toEqual({ valueType: "PERCENTAGE", value: 5, title: `Quote Q-${quote.number}` });
 });
 
+test("a line without an override still sends the quoted catalog price, so Shopify's later price can't change it", async () => {
+  const shopify = fakeShopify();
+  const quote = await queuedQuote(); // catalogPrice 10, no override
+
+  await runSync(shopify.admin, upsert(quote.id));
+
+  const input = shopify.drafts[0].input as { lineItems: Record<string, unknown>[] };
+  expect(input.lineItems[0].priceOverride).toEqual({ amount: "10.00", currencyCode: "USD" });
+});
+
 test("crash after Shopify created the order: retry adopts it, no duplicate", async () => {
   const shopify = fakeShopify();
   shopify.failNext("VendoraDraftOrderCreate", "crashAfterCommit");

@@ -99,7 +99,8 @@
       "title": "Customer",
       "unavailable": "Not available from Shopify",
       "noAddress": "No shipping address",
-      "noEmail": "No email address"
+      "noEmail": "No email address",
+      "buyerMessage": "Message from the buyer"
     },
     "lines": {
       "title": "Lines",

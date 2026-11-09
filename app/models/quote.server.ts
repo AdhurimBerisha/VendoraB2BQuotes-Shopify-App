@@ -8,18 +8,7 @@ import { getCompanyLocation, searchCompanies } from "../shopify/companies.server
 import type { StaffActor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
 import { requireCancel, requirePermission } from "./permissions";
-
-const QUOTE_STATUSES = [
-  "DRAFT",
-  "PENDING_APPROVAL",
-  "APPROVED",
-  "SENT",
-  "ORDERED",
-  "DECLINED",
-  "EXPIRED",
-  "CANCELLED",
-] as const;
-type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+import { QUOTE_STATUSES, type QuoteStatus } from "./quote";
 
 // Which statuses each action may start from.
 const TRANSITIONS = {

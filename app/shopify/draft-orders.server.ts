@@ -49,14 +49,14 @@ type DraftInputSource = {
   version: {
     versionNumber: number;
     quoteDiscountPct: Money | null;
-    lines: { variantId: string; quantity: number; overridePrice: Money | null; discountPct: Money | null }[];
+    lines: { variantId: string; quantity: number; catalogPrice: Money; overridePrice: Money | null; discountPct: Money | null }[];
   };
   location: { shippingAddress?: CompanyAddress; billingAddress?: CompanyAddress };
   shop: { quotePrefix: string; reserveInventory: boolean };
 };
 
-// The DraftOrderInput for one quote version. Catalog prices and price breaks come from the
-// purchasing entity in Shopify; only overrides and discounts are sent explicitly.
+// The DraftOrderInput for one quote version. Every line carries the quote's unit price (catalog
+// price incl. price breaks as priced when saved, or the override), plus the discounts.
 const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) => {
   const label = `${shop.quotePrefix}${quote.number}`;
   const percent = (value: Money, title: string) => ({
@@ -76,12 +76,12 @@ const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) =
     lineItems: version.lines.map((line) => ({
       variantId: line.variantId,
       quantity: line.quantity,
-      ...(line.overridePrice && {
-        priceOverride: {
-          amount: toShopifyAmount(line.overridePrice, quote.currencyCode),
-          currencyCode: quote.currencyCode as CurrencyCode,
-        },
-      }),
+      // Always the quote's unit price: Shopify's live price can drift after approval (exchange rates,
+      // catalog edits), and the customer must pay what was approved.
+      priceOverride: {
+        amount: toShopifyAmount(line.overridePrice ?? line.catalogPrice, quote.currencyCode),
+        currencyCode: quote.currencyCode as CurrencyCode,
+      },
       ...(line.discountPct &&
         !line.discountPct.isZero() && { appliedDiscount: percent(line.discountPct, "Quote discount") }),
     })),

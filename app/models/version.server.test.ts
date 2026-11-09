@@ -205,7 +205,7 @@ test("a save sent from a page opened before submit is rejected, the locked versi
 
   await expect(
     saveDraftLines(rep(), id, lockVersion, [{ variantId: VARIANT, quantity: 9 }], null),
-  ).rejects.toMatchObject({ key: "quote.errors.changedByOther" });
+  ).rejects.toMatchObject({ key: "quote.errors.versionLocked" });
   expect((await getQuote(SHOP, id)).currentVersion!.lines.map((l) => l.quantity)).toEqual([2]);
 });
 

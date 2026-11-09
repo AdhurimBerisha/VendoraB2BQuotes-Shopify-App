@@ -2,12 +2,13 @@
   <div
     class="vendora-rfq"
     data-location-id="{{ customer.current_location.id }}"
-    data-msg-sending="{{ 'request_quote.sending' | t | escape }}"
-    data-msg-empty="{{ 'request_quote.empty' | t | escape }}"
-    data-msg-done="{{ 'request_quote.done' | t: quote: '__QUOTE__' | escape }}"
-    data-msg-forbidden="{{ 'request_quote.forbidden' | t | escape }}"
-    data-msg-rate-limited="{{ 'request_quote.rate_limited' | t | escape }}"
-    data-msg-failed="{{ 'request_quote.failed' | t | escape }}"
+    data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+    data-msg-sending="{{ 'request_quote.sending' | t }}"
+    data-msg-empty="{{ 'request_quote.empty' | t }}"
+    data-msg-done="{{ 'request_quote.done' | t: quote: '__QUOTE__' }}"
+    data-msg-forbidden="{{ 'request_quote.forbidden' | t }}"
+    data-msg-rate-limited="{{ 'request_quote.rate_limited' | t }}"
+    data-msg-failed="{{ 'request_quote.failed' | t }}"
     {{ block.shopify_attributes }}
   >
     <form class="vendora-rfq__form">

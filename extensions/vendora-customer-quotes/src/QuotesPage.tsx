@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 
 // The app backend. ponytail: one constant; in dev set it to the tunnel URL `shopify app dev`
 // prints (or run dev with a fixed --tunnel-url), in production to the app's real URL.
-const BACKEND_URL = "https://example.com";
+const BACKEND_URL = "https://assists-conflicts-patents-wealth.trycloudflare.com";
 
 // Shape of GET /api/customer/quotes (app/models/customer-quotes.server.ts).
 type CustomerQuote = {
