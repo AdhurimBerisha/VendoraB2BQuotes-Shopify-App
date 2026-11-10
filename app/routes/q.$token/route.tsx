@@ -68,6 +68,10 @@ export default function PublicQuote() {
         ) : (
           <>
             {quote.expiresAt && <p>{t("publicQuote.validUntil", { date: quote.expiresAt })}</p>}
+            {/* Also above the table: on a phone the table scrolls sideways and hides the total column. */}
+            <p className={styles.summaryTotal}>
+              {t("publicQuote.total")}: {quote.total}
+            </p>
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <caption>{t("publicQuote.linesCaption")}</caption>

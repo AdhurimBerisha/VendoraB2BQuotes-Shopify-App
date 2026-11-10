@@ -29,6 +29,10 @@
   padding: 2rem 1rem;
 }
 
+.summaryTotal {
+  font-weight: 600;
+}
+
 .tableWrap {
   overflow-x: auto;
 }
