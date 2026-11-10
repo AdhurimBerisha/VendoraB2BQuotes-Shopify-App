@@ -1,3 +1,5 @@
+import "./instrument.server";
+import * as Sentry from "@sentry/react-router";
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
@@ -35,9 +37,12 @@ export const instrumentations: ServerInstrumentation[] = [
   {
     route: (route) => route.instrument({ loader: timed(route.id, "loader"), action: timed(route.id, "action") }),
   },
+  Sentry.createSentryServerInstrumentation(),
 ];
 
-export default async function handleRequest(
+export const handleError = Sentry.createSentryHandleError({ logErrors: true });
+
+async function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
@@ -84,3 +89,5 @@ export default async function handleRequest(
     setTimeout(abort, streamTimeout + 1000);
   });
 }
+
+export default Sentry.wrapSentryHandleRequest(handleRequest);
