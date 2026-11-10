@@ -105,7 +105,10 @@ const QuotesPage = () => {
           <s-stack direction="block" gap="base">
             <s-stack direction="inline" gap="base" alignItems="center">
               <s-badge tone={quote.status === "SENT" ? "auto" : "neutral"}>{t(`status.${quote.status}`)}</s-badge>
-              <s-text type="strong">{formatCurrency(Number(quote.total), { currency: quote.currencyCode })}</s-text>
+              {/* Code too, like Shopify's own Orders list ("$862.00 CAD"): "$" alone is ambiguous. */}
+              <s-text type="strong">
+                {formatCurrency(Number(quote.total), { currency: quote.currencyCode })} {quote.currencyCode}
+              </s-text>
               {quote.expiresAt && (
                 <s-text>{t("validUntil", { date: formatDate(new Date(quote.expiresAt)) })}</s-text>
               )}

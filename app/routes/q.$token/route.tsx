@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
-import { data, useLoaderData } from "react-router";
+import { data, isRouteErrorResponse, useLoaderData, useRouteError } from "react-router";
 import { localDateString } from "../../lib/dates";
 import { createI18n } from "../../lib/i18n";
 import { formatMoney } from "../../lib/money";
@@ -48,7 +48,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   );
 };
 
-export const headers: HeadersFunction = ({ loaderHeaders }) => loaderHeaders;
+// errorHeaders: a thrown 404/429 (with PUBLIC_HEADERS) renders this route's ErrorBoundary; keep its headers.
+export const headers: HeadersFunction = ({ loaderHeaders, errorHeaders }) => errorHeaders ?? loaderHeaders;
+
+export const ErrorBoundary = () => {
+  const error = useRouteError();
+  const { t } = createI18n(LOCALE);
+  const status = isRouteErrorResponse(error) ? error.status : 500;
+  const key = status === 404 ? "notFound" : status === 429 ? "rateLimited" : "failed";
+  return (
+    <div className={styles.page} lang={LOCALE}>
+      <main className={styles.main}>
+        <p role="alert">{t(`publicQuote.errors.${key}`)}</p>
+      </main>
+    </div>
+  );
+};
 
 export const meta: MetaFunction = () => [{ name: "robots", content: "noindex" }];
 

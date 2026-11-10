@@ -55,7 +55,8 @@
     "location": "Company location",
     "noMainContact": "No main contact: set one in Shopify admin → Customers → Companies",
     "refineSearch": "More companies match. Type more of the name to narrow the list.",
-    "create": "Create quote"
+    "create": "Create quote",
+    "locationRequired": "Choose a company location first."
   },
   "quote": {
     "heading": "{{label}} · v{{version}}",
@@ -293,7 +294,7 @@
   },
   "jobs": {
     "title": "Jobs",
-    "empty": "No failed background work. Everything that went wrong was retried successfully.",
+    "empty": "No failed background work. A job you retry runs again in the background and shows up here again if it still fails.",
     "columns": { "queue": "Task", "quote": "Quote", "error": "Last error", "attempts": "Attempts", "failedAt": "Failed", "action": "Action" },
     "retry": "Retry",
     "retryLabel": "Retry {{queue}}",
@@ -502,6 +503,11 @@
     "total": "Total (excl. tax and shipping)",
     "note": "Note",
     "downloadPdf": "Download PDF",
-    "accept": "Review and accept"
+    "accept": "Review and accept",
+    "errors": {
+      "notFound": "This quote link doesn't work. It may have expired or been mistyped. Ask the seller for a new link.",
+      "rateLimited": "Too many requests. Wait a minute, then try again.",
+      "failed": "Something went wrong. Try again later."
+    }
   }
 }
