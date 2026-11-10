@@ -337,6 +337,7 @@ export default function QuoteDetail() {
           lockVersion={quote.lockVersion}
           version={version}
           editable={editable}
+          currency={quote.currency}
         />
       )}
       {quote.status === "PENDING_APPROVAL" && perms.approve && data.approval && (
@@ -495,11 +496,13 @@ function LinesSection({
   lockVersion,
   version,
   editable,
+  currency,
 }: {
   quoteId: string;
   lockVersion: number;
   version: NonNullable<LoaderData["version"]>;
   editable: boolean;
+  currency: string;
 }) {
   const { t } = useTranslation();
   const shopify = useAppBridge();
@@ -539,19 +542,29 @@ function LinesSection({
   };
   const addProducts = async () => {
     // B-9: active, published products only, no gift cards (the server checks again).
-    const picked = await shopify.resourcePicker({
-      type: "variant",
+    // A product picker, not a variant one: the variant picker shows only variant titles, so
+    // single-variant products ("Default Title") appeared as blank rows.
+    const products = await shopify.resourcePicker({
+      type: "product",
       multiple: true,
-      filter: { archived: false, draft: false, query: "gift_card:false" },
+      filter: { archived: false, draft: false, variants: true, query: "gift_card:false" },
     });
-    if (!picked?.length) return;
+    const picked = (products ?? []).flatMap((product) =>
+      product.variants.flatMap((variant) => {
+        if (!variant.id) return [];
+        // Not displayName: it is "Product - Default Title" for single-variant products.
+        const title = variant.title && variant.title !== "Default Title" ? `${product.title} - ${variant.title}` : product.title;
+        return [{ id: variant.id, title, sku: variant.sku ?? "" }];
+      }),
+    );
+    if (!picked.length) return;
     setLines((current) => [
       ...current,
       ...picked
         .filter((variant) => !current.some((line) => line.variantId === variant.id))
         .map((variant) => ({
           variantId: variant.id,
-          title: variant.displayName,
+          title: variant.title,
           sku: variant.sku ?? "",
           quantity: "1",
           overridePrice: "",
@@ -658,6 +671,7 @@ function LinesSection({
                         value={line.overridePrice}
                         min={0}
                         step={0.01}
+                        prefix={currency}
                         error={decimalError(line.overridePrice) ? t("quote.lines.priceError") : undefined}
                         onInput={(event) => update(index, "overridePrice", event.currentTarget.value)}
                       ></s-number-field>

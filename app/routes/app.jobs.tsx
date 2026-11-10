@@ -13,6 +13,8 @@ import { quoteLabel } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import db from "../db.server";
 
+const ERROR_PREVIEW = 120;
+
 // Jobs (M4.2, OWNER/MANAGER): this shop's background work that failed every retry.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
@@ -25,6 +27,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       const number = job.quoteId ? numbers.get(job.quoteId) : undefined;
       return {
         ...job,
+        // A raw error can be a long Prisma or GraphQL message; a long cell pushes Retry off-screen.
+        error: job.error.length > ERROR_PREVIEW ? `${job.error.slice(0, ERROR_PREVIEW)}…` : job.error,
         quoteLabel: number === undefined ? null : quoteLabel(shop?.quotePrefix ?? "Q-", number),
         failedAt: formatDateTime(new Date(job.failedAt), actor.locale, shop?.timezone ?? "UTC"),
       };

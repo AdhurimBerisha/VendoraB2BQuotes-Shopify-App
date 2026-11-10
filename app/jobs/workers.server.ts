@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-router";
 import type { Job } from "pg-boss";
 import { QUEUES, type QueueName, getBoss } from "./queue.server";
 import { runPrivacy, type PrivacyJob } from "./privacy.server";
@@ -23,6 +24,7 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 const onLastFailure = async (name: QueueName, data: unknown, error: unknown) => {
   const message = errorText(error);
   console.error("job failed for good", { queue: name, shop: (data as { shop?: string }).shop, error: message });
+  Sentry.captureException(error, { tags: { queue: name } });
   if (name === "sync-draft-order") await giveUpSync((data as SyncJob).shop, (data as SyncJob).quoteId, message);
   if (name === "send-invoice") await giveUpInvoice(data as SendInvoiceJob, message);
 };

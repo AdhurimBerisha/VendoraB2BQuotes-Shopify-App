@@ -6,6 +6,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import ErrorBanner from "../components/ErrorBanner";
 import { runAction } from "../lib/action.server";
+import { UserError } from "../lib/errors";
 import { gid, parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { requirePermission } from "../models/permissions";
@@ -39,6 +40,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const actor = await getActor(request);
   const form = await request.formData();
   return runAction(async () => {
+    // The one field a user can leave empty here: say so in words, not "locationId".
+    if (!form.get("locationId")) throw new UserError("newQuote.locationRequired");
     const quote = await createQuote(actor, parseForm(form, createSchema));
     return { quoteId: quote.id };
   });
