@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { reactRouter } from "@react-router/dev/vite";
+import { sentryReactRouter } from "@sentry/react-router/vite";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { loadTestEnv } from "./app/test/test-db-url";
@@ -37,7 +38,7 @@ if (host === "localhost") {
   };
 }
 
-export default defineConfig({
+export default defineConfig((configEnv) => ({
   server: {
     allowedHosts: [host],
     cors: {
@@ -52,6 +53,10 @@ export default defineConfig({
   },
   plugins: [
     !process.env.VITEST && reactRouter(),
+    // Uploads source maps and creates the release (git SHA) on build. Needs SENTRY_AUTH_TOKEN,
+    // otherwise it skips the upload without failing the build.
+    !process.env.VITEST &&
+      sentryReactRouter({ org: "adhurimberisha", project: "vendora", authToken: process.env.SENTRY_AUTH_TOKEN }, configEnv),
     tsconfigPaths(),
   ],
   test: process.env.VITEST
@@ -68,4 +73,4 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@shopify/app-bridge-react"],
   },
-}) satisfies UserConfig;
+}) satisfies UserConfig);
