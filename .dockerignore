@@ -1,3 +1,15 @@
 .cache
 build
 node_modules
+**/node_modules
+.git
+.env
+.env.*
+.shopify
+.react-router
+.vscode
+.playwright-mcp
+ROADMAP.md
+roadmap
+coverage
+load
