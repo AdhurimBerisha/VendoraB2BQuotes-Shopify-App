@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
@@ -33,9 +34,9 @@ const runReconcileAll = async () => {
     await enqueue("reconcile", { shop: shop.id }, {
       singletonKey: `reconcile:${shop.id}`,
       startAfter: Math.floor((index * SPREAD_SECONDS) / shops.length),
-    }).catch((error: unknown) => console.warn("reconcile not queued (already queued?)", { shop: shop.id, error: String(error) }));
+    }).catch((error: unknown) => logger.warn({ shop: shop.id, error: String(error) }, "reconcile not queued (already queued?)"));
   }
-  console.log("reconcile fanned out", { shops: shops.length });
+  logger.info({ shops: shops.length }, "reconcile fanned out");
 };
 
 type OpenQuote = Prisma.QuoteGetPayload<{ include: { versions: { include: { lines: true } } } }>;
@@ -110,7 +111,7 @@ const checkStock = async (admin: AdminApiContext, shop: string, quote: OpenQuote
 
 const runReconcileShop = async (shop: string, deps: Deps = defaultDeps) => {
   if (!(await isInstalled(shop))) {
-    console.log("reconcile skipped: shop not installed", { shop });
+    logger.info({ shop }, "reconcile skipped: shop not installed");
     return;
   }
   const admin = await deps.getAdmin(shop);
@@ -129,7 +130,7 @@ const runReconcileShop = async (shop: string, deps: Deps = defaultDeps) => {
     } catch (error) {
       if (error instanceof ShopifyThrottled) throw error; // pg-boss retries the whole shop later (all steps are safe to repeat)
       counts.failed++;
-      console.warn("reconcile: quote check failed", { shop, quoteId: quote.id, error: error instanceof Error ? error.message : String(error) });
+      logger.warn({ shop, quoteId: quote.id, error: error instanceof Error ? error.message : String(error) }, "reconcile: quote check failed");
     }
   }
 
@@ -142,10 +143,10 @@ const runReconcileShop = async (shop: string, deps: Deps = defaultDeps) => {
   for (const { id } of stuck) {
     const job: SyncJob = { shop, quoteId: id, op: "upsert" };
     await enqueue("sync-draft-order", job, { singletonKey: id }).catch((error: unknown) =>
-      console.warn("reconcile: stuck sync not re-queued (a job exists)", { shop, quoteId: id, error: String(error) }),
+      logger.warn({ shop, quoteId: id, error: String(error) }, "reconcile: stuck sync not re-queued (a job exists)"),
     );
   }
-  console.log("reconcile done", { shop, checked: quotes.length, ...counts, stuck: stuck.length });
+  logger.info({ shop, checked: quotes.length, ...counts, stuck: stuck.length }, "reconcile done");
 };
 
 export { runReconcileAll, runReconcileShop };

@@ -4,11 +4,12 @@ import * as Sentry from "@sentry/react-router";
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { HydratedRouter } from "react-router/dom";
-import { SENTRY_DSN } from "./lib/sentry";
+import { SENTRY_DATA_COLLECTION, SENTRY_DSN } from "./lib/sentry";
 
 Sentry.init({
   dsn: SENTRY_DSN,
   environment: import.meta.env.MODE,
+  dataCollection: SENTRY_DATA_COLLECTION,
   integrations: [
     Sentry.reactRouterTracingIntegration(),
     // Text and media are masked by default: merchant and buyer data never leaves the browser.

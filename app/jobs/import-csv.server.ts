@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { unauthenticated } from "../shopify.server";
 import { runValidation } from "../models/import.server";
@@ -13,7 +14,7 @@ const defaultDeps: Deps = {
 // Files over INLINE_ROWS rows. A failure marks the import FAILED (shown on the page) and pg-boss retries.
 const runImportCsv = async ({ shop, importId, text }: ImportCsvJob, deps: Deps = defaultDeps) => {
   if (!(await isInstalled(shop))) {
-    console.log("import-csv skipped: shop not installed", { shop, importId });
+    logger.info({ shop, importId }, "import-csv skipped: shop not installed");
     return;
   }
   await runValidation(await deps.getAdmin(shop), importId, text);

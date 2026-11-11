@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { NotFoundError, UserError } from "../lib/errors";
@@ -74,7 +75,7 @@ const retryFailedJob = async (actor: StaffActor, queue: string, jobId: string) =
   const moved = await boss.redrive(dead, { ids: [jobId], data: { shop: actor.shop }, destination: queue });
   if (moved === 0) throw new NotFoundError();
   await db.$transaction((tx) => audit(tx, actor, quoteId, "job.retried", { queue, jobId }));
-  console.log("dead job retried", { shop: actor.shop, queue, jobId });
+  logger.info({ shop: actor.shop, queue, jobId }, "dead job retried");
 };
 
 export { listFailedJobs, retryFailedJob };

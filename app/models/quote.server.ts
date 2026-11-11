@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import db from "../db.server";
@@ -65,7 +66,7 @@ const createQuote = async (actor: StaffActor, input: { locationId: string }) => 
       actor.userId,
     );
     await audit(tx, actor, quote.id, "quote.created", { number: quote.number });
-    console.log("quote created", { shop: actor.shop, quoteId: quote.id, number: quote.number });
+    logger.info({ shop: actor.shop, quoteId: quote.id, number: quote.number }, "quote created");
     return { ...quote, currentVersionId: version.id };
   });
 };
@@ -171,7 +172,7 @@ const cancelQuote = async (actor: StaffActor, quoteId: string, reason?: string) 
       { singletonKey: `${quoteId}:delete`, tx },
     );
   });
-  console.log("quote cancelled", { shop: actor.shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+  logger.info({ shop: actor.shop, quoteId, hadDraftOrder: !!quote.draftOrderId }, "quote cancelled");
 };
 
 const OPEN: QuoteStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
@@ -193,7 +194,7 @@ const setExpiry = async (actor: StaffActor, quoteId: string, localDate: string) 
     if (count !== 1) throw new ConflictError("quote.errors.invalidTransition", { action: "expire" });
     await audit(tx, actor, quoteId, "quote.expiry_changed", { localDate });
   });
-  console.log("quote expiry changed", { shop: actor.shop, quoteId, expiresAt: expiresAt.toISOString() });
+  logger.info({ shop: actor.shop, quoteId, expiresAt: expiresAt.toISOString() }, "quote expiry changed");
 };
 
 // Past its expiry → EXPIRED; its draft order is deleted so the invoice link stops working.
@@ -211,7 +212,7 @@ const expireQuote = async (shop: string, quoteId: string, now = new Date()) => {
     await enqueue("sync-draft-order", { shop, quoteId, op: "delete" }, { singletonKey: `${quoteId}:delete`, tx });
   });
   // M3.3: email the assigned rep "quote expired".
-  console.log("quote expired", { shop, quoteId, hadDraftOrder: !!quote.draftOrderId });
+  logger.info({ shop, quoteId, hadDraftOrder: !!quote.draftOrderId }, "quote expired");
   return true;
 };
 

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { Session } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 import { EMAIL_TYPES, type EmailType } from "../emails/templates";
@@ -53,7 +54,7 @@ const setRole = async (actor: StaffActor, staffId: string, role: Role) => {
     }
     await tx.staffMember.update({ where: { id: target.id }, data: { role } });
     await audit(tx, actor, null, "team.role_changed", { staffId, from: target.role, to: role });
-    console.log("role changed", { shop: actor.shop, staffId, from: target.role, to: role });
+    logger.info({ shop: actor.shop, staffId, from: target.role, to: role }, "role changed");
   });
 };
 
@@ -82,7 +83,7 @@ const saveNotificationPrefs = async (actor: StaffActor, prefs: NotificationPrefs
     where: { shop_shopifyUserId: { shop: actor.shop, shopifyUserId: actor.userId } },
     data: { notificationPrefs: prefs },
   });
-  console.log("notification prefs saved", { shop: actor.shop, off: EMAIL_TYPES.filter((type) => !prefs[type]) });
+  logger.info({ shop: actor.shop, off: EMAIL_TYPES.filter((type) => !prefs[type]) }, "notification prefs saved");
 };
 
 export {

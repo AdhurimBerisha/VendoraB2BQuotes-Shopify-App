@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import db from "../db.server";
 import { clientIp, rateLimit } from "../lib/rate-limit.server";
 import { verifyQuoteToken } from "../lib/signed-token.server";
@@ -39,7 +40,7 @@ const findPublicQuote = async (request: Request, token: string) => {
   ]);
   const version = quote?.versions[0];
   if (!quote || !version || !shop || shop.uninstalledAt) {
-    console.log("public quote not found", { shop: payload.shop, quoteId: payload.quoteId, version: payload.version });
+    logger.info({ shop: payload.shop, quoteId: payload.quoteId, version: payload.version }, "public quote not found");
     throw notFound();
   }
   // A newer version exists: the old link shows no data.

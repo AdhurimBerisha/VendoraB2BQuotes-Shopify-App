@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 import { z } from "zod";
@@ -22,7 +23,7 @@ const upsertShopOnInstall = async (admin: AdminApiContext, shop: string) => {
     create: { id: shop, ...data },
     update: data,
   });
-  console.log("shop upserted", { shop, timezone: data.timezone, currency: data.currencyCode });
+  logger.info({ shop, timezone: data.timezone, currency: data.currencyCode }, "shop upserted");
 };
 
 // Sessions go now; data stays until shop/redact (~48 h later) so a quick reinstall keeps it.
@@ -75,7 +76,7 @@ const saveGeneralSettings = async (actor: StaffActor, settings: GeneralSettings)
     await tx.shop.update({ where: { id: actor.shop }, data: settings });
     await audit(tx, actor, null, "settings.general_changed", settings);
   });
-  console.log("general settings saved", { shop: actor.shop });
+  logger.info({ shop: actor.shop }, "general settings saved");
 };
 
 // The server fetches the logo when rendering a PDF, so only Shopify's file CDN is allowed:
@@ -121,7 +122,7 @@ const saveBranding = async (actor: StaffActor, branding: Branding) => {
     await tx.shop.update({ where: { id: actor.shop }, data: branding });
     await audit(tx, actor, null, "settings.branding_changed", { logo: !!branding.logoUrl });
   });
-  console.log("branding saved", { shop: actor.shop });
+  logger.info({ shop: actor.shop }, "branding saved");
 };
 
 export {

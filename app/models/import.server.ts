@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import Papa from "papaparse";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
@@ -205,7 +206,7 @@ const runValidation = async (admin: AdminApiContext, importId: string, text: str
       prices: (ids) => getVariantPrices(admin, ids, quote.companyLocationId),
       currency: quote.currencyCode,
     });
-    console.log("import validated", { importId, rows: imp.rowCount, ...report.summary });
+    logger.info({ importId, rows: imp.rowCount, ...report.summary }, "import validated");
     return await db.import.update({ where: { id: importId }, data: { status: "READY", lines, report } });
   } catch (error) {
     await db.import.update({ where: { id: importId }, data: { status: "FAILED", error: String(error) } });
@@ -233,7 +234,7 @@ const startImport = async (actor: StaffActor, quoteId: string, file: File) => {
       createdBy: actor.userId,
     },
   });
-  console.log("import started", { shop: actor.shop, quoteId, importId: imp.id, rows: rows.length });
+  logger.info({ shop: actor.shop, quoteId, importId: imp.id, rows: rows.length }, "import started");
   if (rows.length <= INLINE_ROWS) return runValidation(actor.admin, imp.id, text);
   // ponytail: the file text (≤ 5 MB) rides in the job payload; move it to storage if jobs get heavy.
   await enqueue("import-csv", { shop: actor.shop, importId: imp.id, text }, { singletonKey: imp.id });
@@ -285,7 +286,7 @@ const commitImport = async (actor: StaffActor, importId: string, mode: "append" 
       await tx.import.update({ where: { id: imp.id }, data: { lines: Prisma.DbNull } });
       await audit(tx, actor, quote.id, "import.committed", { importId: imp.id, lines: incoming.length, mode });
     });
-    console.log("import committed", { shop: actor.shop, importId: imp.id, lines: incoming.length, mode });
+    logger.info({ shop: actor.shop, importId: imp.id, lines: incoming.length, mode }, "import committed");
     return quote.id;
   } catch (error) {
     await db.import.update({ where: { id: imp.id }, data: { status: "READY" } }); // let them try again

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import db from "../db.server";
@@ -70,7 +71,7 @@ const createRequestedQuote = async (
       { kind: "managers" },
       { quoteId: quote.id, comment: source.kind === "button" ? (source.message ?? undefined) : undefined },
     );
-    console.log("requested quote created", { shop, quoteId: quote.id, source: source.kind, lines: lines.length });
+    logger.info({ shop, quoteId: quote.id, source: source.kind, lines: lines.length }, "requested quote created");
     return quote;
   });
 };
@@ -99,7 +100,7 @@ const requestQuoteFromStorefront = async (admin: AdminApiContext, shop: string, 
     getCompanyLocation(admin, locationGid),
   ]);
   if (!contactId || !location) {
-    console.warn("quote request refused: buyer can't buy for this location", { shop, locationId });
+    logger.warn({ shop, locationId }, "quote request refused: buyer can't buy for this location");
     throw new ForbiddenError();
   }
   const actor: CustomerActor = { type: "CUSTOMER", shop, customerId };

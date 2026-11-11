@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { Prisma } from "@prisma/client";
 import { type AttentionItem, attentionItems, withItem } from "./attention";
 import { notify } from "./notify.server";
@@ -15,7 +16,7 @@ const raise = async (
   if (attentionItems(quote.attention).length === 0) {
     await notify(tx, shop, "needsAttention", { kind: "managers" }, { quoteId });
   }
-  console.log("attention raised", { shop, quoteId, code: item.code });
+  logger.info({ shop, quoteId, code: item.code }, "attention raised");
 };
 
 export { raise };

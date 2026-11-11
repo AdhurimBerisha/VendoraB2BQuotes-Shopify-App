@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
@@ -36,7 +37,7 @@ const linesKey = (lines: { variantId: string; quantity: number }[]) =>
     .join("|");
 
 const processWebhook = async (topic: string, shop: string, payload: unknown, getAdmin = defaultGetAdmin) => {
-  console.log("processing webhook", { topic, shop });
+  logger.info({ topic, shop }, "processing webhook");
   switch (topic) {
     case "DRAFT_ORDERS_CREATE":
       return onDraftCreate(shop, payload as { id: number; tags?: string }, getAdmin);
@@ -54,7 +55,7 @@ const processWebhook = async (topic: string, shop: string, payload: unknown, get
       return;
     }
     default:
-      console.warn("unhandled webhook topic", { topic, shop });
+      logger.warn({ topic, shop }, "unhandled webhook topic");
   }
 };
 
@@ -67,7 +68,7 @@ const onDraftUpdate = async (shop: string, payload: DraftOrderPayload) => {
   const updatedAt = new Date(payload.updated_at);
   // Scenario 6: a duplicate, an out-of-order delivery, or our own change.
   if (quote.shopifyUpdatedAt && updatedAt <= quote.shopifyUpdatedAt) {
-    console.log("draft order webhook ignored (not newer)", { quoteId: quote.id });
+    logger.info({ quoteId: quote.id }, "draft order webhook ignored (not newer)");
     return;
   }
   const actor = webhookActor(shop, "draft_orders/update");
@@ -123,7 +124,7 @@ const onDraftCreate = async (shop: string, payload: { id: number; tags?: string 
   if (!draft || isOurs(draft.tags)) return;
   const purchase = draft.purchasingEntity;
   if (!purchase || !("company" in purchase)) {
-    console.log("draft order ignored: not a company purchase", { shop, draftOrderId });
+    logger.info({ shop, draftOrderId }, "draft order ignored: not a company purchase");
     return;
   }
 
@@ -147,7 +148,7 @@ const importDraft = async (
   const location = await getCompanyLocation(admin, purchase.location.id);
   const contact = purchase.contact ?? location?.company.mainContact;
   if (!location || !contact) {
-    console.warn("draft order ignored: location or contact missing", { shop, draftOrderId });
+    logger.warn({ shop, draftOrderId }, "draft order ignored: location or contact missing");
     return null;
   }
   // Custom items (no variant) can't be quoted; the next sync drops them from the draft order.
@@ -200,7 +201,7 @@ const onProductGone = async (
       await raise(tx, shop, line.version.quoteId, { code, data: { productId, title: line.titleSnapshot } });
     });
   }
-  console.log("product lines flagged", { shop, productId, code, lines: lines.length });
+  logger.info({ shop, productId, code, lines: lines.length }, "product lines flagged");
 };
 
 export { linesKey, processWebhook };

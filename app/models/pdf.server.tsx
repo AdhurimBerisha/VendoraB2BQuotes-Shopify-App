@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import db from "../db.server";
@@ -78,7 +79,7 @@ const renderQuotePdf = async (data: QuotePdfData) => {
   registerFonts();
   const started = Date.now();
   const pdf = await renderToBuffer(<QuoteDocument q={data} />);
-  console.log("quote pdf rendered", { quote: data.numberLabel, version: data.version, lines: data.lines.length, ms: Date.now() - started });
+  logger.info({ quote: data.numberLabel, version: data.version, lines: data.lines.length, ms: Date.now() - started }, "quote pdf rendered");
   return pdf;
 };
 

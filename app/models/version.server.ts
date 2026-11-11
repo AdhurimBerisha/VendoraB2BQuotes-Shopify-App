@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
@@ -105,12 +106,12 @@ const saveDraftLines = async (
     input,
     quoteDiscountPct,
   );
-  console.log("draft lines priced", {
+  logger.info({
     quoteId,
     lines: lines.length,
     total: quoteTotals.total.toString(),
     problems: lines.filter((line) => line.problems.length).length,
-  });
+  }, "draft lines priced");
 
   return db.$transaction(async (tx) => {
     const quote = await tx.quote.findFirst({
@@ -175,7 +176,7 @@ const refreshPrices = async (actor: StaffActor, quoteId: string) => {
   }
   if (!pricesChanged && !problemsChanged) return;
 
-  console.log("draft refreshed before submit", { quoteId, pricesChanged, problemsChanged });
+  logger.info({ quoteId, pricesChanged, problemsChanged }, "draft refreshed before submit");
   await saveDraftLines(
     actor,
     quoteId,

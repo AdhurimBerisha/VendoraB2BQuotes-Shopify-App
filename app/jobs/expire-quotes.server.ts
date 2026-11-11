@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import db from "../db.server";
 import { audit } from "../models/audit.server";
 import { notify } from "../models/notify.server";
@@ -33,7 +34,7 @@ const runExpireQuotes = async (now = new Date()) => {
         if (await expireQuote(quote.shop, quote.id, now)) expired++;
       } catch (error) {
         failed++;
-        console.error("quote not expired, retried next hour", { shop: quote.shop, quoteId: quote.id, error });
+        logger.error({ shop: quote.shop, quoteId: quote.id, error }, "quote not expired, retried next hour");
       }
     }
     if (due.length < BATCH) break;
@@ -68,7 +69,7 @@ const runExpireQuotes = async (now = new Date()) => {
     reminded++;
   }
 
-  console.log("expire-quotes done", { shops: shops.length, expired, failed, reminded });
+  logger.info({ shops: shops.length, expired, failed, reminded }, "expire-quotes done");
 };
 
 export { runExpireQuotes };

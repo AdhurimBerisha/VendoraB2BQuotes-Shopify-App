@@ -8,20 +8,21 @@ import { type EntryContext, type ServerInstrumentation } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { startWorkers } from "./jobs/workers.server";
+import { logger } from "./lib/logger.server";
 
 // One worker set per server process. Set RUN_WORKERS=false on a web-only instance
 // once workers move to their own service (D-13).
 if (process.env.RUN_WORKERS !== "false" && process.env.NODE_ENV !== "test") {
   startWorkers().catch((error) => {
     globalThis.vendoraWorkersStarted = false; // let the next import retry
-    console.error("[workers] failed to start", error);
+    logger.error({ error }, "[workers] failed to start");
   });
 }
 
 export const streamTimeout = 5000;
 
 // M4.6: how long every loader and action takes (target: p95 under 1 s). One line per call;
-// slow ones are warnings. ponytail: console only; p95 and alerts come with pino/Sentry (M1.7).
+// slow ones are warnings (and reach Sentry Logs).
 const SLOW_MS = 1000;
 const timed =
   (routeId: string, kind: "loader" | "action") =>
@@ -29,8 +30,9 @@ const timed =
     const start = performance.now();
     const { status } = await handler();
     const ms = Math.round(performance.now() - start);
-    const log = ms >= SLOW_MS ? console.warn : console.log;
-    log(ms >= SLOW_MS ? "slow route" : "route timing", { route: routeId, kind, pattern: info.pattern, ms, status });
+    const fields = { route: routeId, kind, pattern: info.pattern, ms, status };
+    if (ms >= SLOW_MS) logger.warn(fields, "slow route");
+    else logger.info(fields, "route timing");
   };
 
 export const instrumentations: ServerInstrumentation[] = [
@@ -79,7 +81,7 @@ async function handleRequest(
         },
         onError(error) {
           responseStatusCode = 500;
-          console.error(error);
+          logger.error({ error }, "render error");
         },
       }
     );
