@@ -2,9 +2,9 @@ import "@shopify/ui-extensions/preact";
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
-// The app backend. ponytail: one constant; in dev set it to the tunnel URL `shopify app dev`
-// prints (or run dev with a fixed --tunnel-url), in production to the app's real URL.
-const BACKEND_URL = "https://cement-typing-host-amendments.trycloudflare.com";
+// The app backend. ponytail: one constant, set to staging on Render. To test this page against
+// local code, set it to the tunnel URL `shopify app dev` prints; for production (M6.1) to the real URL.
+const BACKEND_URL = "https://vendora-staging-f4u9.onrender.com";
 
 // Shape of GET /api/customer/quotes (app/models/customer-quotes.server.ts).
 type CustomerQuote = {
