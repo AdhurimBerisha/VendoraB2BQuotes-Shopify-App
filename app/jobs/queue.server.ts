@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { PgBoss, fromPrisma } from "pg-boss";
 import type { Prisma } from "@prisma/client";
 
@@ -34,7 +35,7 @@ const startBoss = async () => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
   const boss = new PgBoss(connectionString);
-  boss.on("error", (error) => console.error("[pg-boss]", error));
+  boss.on("error", (error) => logger.error({ error }, "[pg-boss]"));
   await boss.start();
   for (const [name, config] of Object.entries(QUEUES)) {
     const deadLetter = `${name}-dead`;
@@ -45,7 +46,7 @@ const startBoss = async () => {
       await boss.createQueue(name, { ...config, deadLetter });
     }
   }
-  console.log("[pg-boss] started", { queues: Object.keys(QUEUES) });
+  logger.info({ queues: Object.keys(QUEUES) }, "[pg-boss] started");
   return boss;
 };
 

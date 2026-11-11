@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import * as Sentry from "@sentry/react-router";
 import type { Job } from "pg-boss";
 import { QUEUES, type QueueName, getBoss } from "./queue.server";
@@ -23,8 +24,9 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 // ponytail: jobs that time out (expireInSeconds) fail outside this handler and only reach the Jobs page.
 const onLastFailure = async (name: QueueName, data: unknown, error: unknown) => {
   const message = errorText(error);
-  console.error("job failed for good", { queue: name, shop: (data as { shop?: string }).shop, error: message });
-  Sentry.captureException(error, { tags: { queue: name } });
+  const shop = (data as { shop?: string }).shop;
+  logger.error({ queue: name, shop, error: message }, "job failed for good");
+  Sentry.captureException(error, { tags: { queue: name, shop } });
   if (name === "sync-draft-order") await giveUpSync((data as SyncJob).shop, (data as SyncJob).quoteId, message);
   if (name === "send-invoice") await giveUpInvoice(data as SendInvoiceJob, message);
 };
@@ -38,7 +40,7 @@ const handle =
     } catch (error) {
       if (job.retryCount >= QUEUES[name].retryLimit) {
         await onLastFailure(name, job.data, error).catch((handlerError) =>
-          console.error("last-failure handler failed", { queue: name, error: errorText(handlerError) }),
+          logger.error({ queue: name, error: errorText(handlerError) }, "last-failure handler failed"),
         );
       }
       throw error;
@@ -62,7 +64,7 @@ const startWorkers = async () => {
   await boss.work<{ shop: string }>("reconcile", one, handle("reconcile", (job) => runReconcileShop(job.data.shop)));
   await boss.work<PrivacyJob>("privacy", one, handle("privacy", (job) => runPrivacy(job.data)));
   await boss.work<SendEmailJob>("send-email", one, handle("send-email", (job) => runSendEmail(job.data, { jobId: job.id })));
-  console.log("[workers] started");
+  logger.info("[workers] started");
 
   // Let running jobs finish before the process exits.
   const stop = async () => {

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { recordHealth } from "../models/health.server";
 
 // Shopify rejected the input; nothing was changed. Definite.
@@ -38,7 +39,7 @@ const warnIfLowBudget = async (result: unknown) => {
     .catch(() => null)) as { extensions?: { cost?: { throttleStatus?: ThrottleStatus } } } | null;
   const status = body?.extensions?.cost?.throttleStatus;
   if (status && status.currentlyAvailable < status.maximumAvailable * 0.2) {
-    console.warn("shopify query budget low", status);
+    logger.warn(status, "shopify query budget low");
   }
 };
 
@@ -59,7 +60,7 @@ const call = async <T>(fn: () => Promise<T>): Promise<T> => {
     if (status === 429 || codes.includes("THROTTLED")) throw new ShopifyThrottled(message);
     if (codes.includes("ACCESS_DENIED")) throw new ShopifyDenied(message);
     recordHealth("shopify", false); // degraded mode counts only outages, not our own mistakes
-    console.warn("shopify call failed (unclassified)", { status, message });
+    logger.warn({ status, message }, "shopify call failed (unclassified)");
     throw error;
   }
 };

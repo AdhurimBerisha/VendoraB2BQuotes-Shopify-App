@@ -1,3 +1,4 @@
+import { logger } from "./lib/logger.server";
 import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
@@ -30,7 +31,7 @@ const shopify = shopifyApp({
       try {
         await upsertShopOnInstall(admin, session.shop);
       } catch (error) {
-        console.error("afterAuth shop upsert failed", { shop: session.shop, error });
+        logger.error({ shop: session.shop, error }, "afterAuth shop upsert failed");
       }
     },
   },

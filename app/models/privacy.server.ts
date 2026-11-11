@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import db from "../db.server";
 
 const customerGid = (id: number) => `gid://shopify/Customer/${id}`;
@@ -84,7 +85,7 @@ const handlePrivacyWebhook = async (
 
   const customerId = payloadCustomerId(payload);
   if (customerId === null) {
-    console.warn("privacy webhook without customer id", { topic, shop });
+    logger.warn({ topic, shop }, "privacy webhook without customer id");
     return;
   }
   if (topic === "CUSTOMERS_REDACT") return redactCustomer(shop, customerId);

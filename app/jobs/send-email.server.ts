@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { renderEmail } from "../emails/templates";
 import { createI18n } from "../lib/i18n";
 import type { SendEmailJob } from "../models/notify.server";
@@ -23,7 +24,7 @@ const runSendEmail = async (
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   if (!apiKey || !from) {
-    console.warn("email skipped: RESEND_API_KEY or EMAIL_FROM not set", { shop: job.shop, type: job.type });
+    logger.warn({ shop: job.shop, type: job.type }, "email skipped: RESEND_API_KEY or EMAIL_FROM not set");
     return;
   }
 
@@ -45,15 +46,15 @@ const runSendEmail = async (
     const body = (await response.json().catch(() => ({}))) as { name?: unknown; message?: unknown };
     const details = { shop: job.shop, type: job.type, status: response.status, name: body.name, message: body.message };
     if (isPermanent(response.status, body.name)) {
-      console.error("email rejected by Resend, not retried", details);
+      logger.error(details, "email rejected by Resend, not retried");
       return;
     }
     recordHealth("email", false);
-    console.warn("email failed, will retry", details);
+    logger.warn(details, "email failed, will retry");
     throw new Error(`Resend responded ${response.status}`);
   }
   recordHealth("email", true);
-  console.log("email sent", { shop: job.shop, type: job.type });
+  logger.info({ shop: job.shop, type: job.type }, "email sent");
 };
 
 export { runSendEmail };

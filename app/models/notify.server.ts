@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { Prisma } from "@prisma/client";
 import db from "../db.server";
 import type { EmailParams, EmailType } from "../emails/templates";
@@ -59,7 +60,7 @@ const notify = async (
     const job: SendEmailJob = { shop, type, to, locale, params: emailParams };
     await enqueue("send-email", job, { tx });
   }
-  console.log("notify queued", { shop, quoteId, type, recipients: unique.length });
+  logger.info({ shop, quoteId, type, recipients: unique.length }, "notify queued");
 };
 
 export { adminUrl, notify };

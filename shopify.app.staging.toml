@@ -1,0 +1,45 @@
+# The "Vendora Staging" app, hosted on Render. Keep scopes, webhooks and the proxy in sync with
+# shopify.app.toml; only client_id, name and the URLs differ. Deploy with `npm run deploy:staging`.
+
+client_id = "b278ef44271f858d91b9874d5698fdc9"
+application_url = "https://vendora-staging-f4u9.onrender.com"
+embedded = true
+name = "Vendora Staging"
+
+[access_scopes]
+scopes = "read_products,read_customers,write_draft_orders,read_inventory,read_orders,write_app_proxy"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/draft-orders"
+  topics = [ "draft_orders/create", "draft_orders/update", "draft_orders/delete" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/products"
+  topics = [ "products/update", "products/delete" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
+[auth]
+redirect_urls = [ "https://vendora-staging-f4u9.onrender.com/api/auth" ]
+
+[build]
+# `shopify app dev` must never rewrite the staging URLs.
+automatically_update_urls_on_dev = false
+
+[app_proxy]
+url = "/proxy"
+prefix = "apps"
+subpath = "vendora"

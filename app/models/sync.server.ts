@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { Prisma } from "@prisma/client";
 import db from "../db.server";
@@ -53,7 +54,7 @@ const requestSync = async (actor: Actor, quoteId: string, send?: { message: stri
     await enqueue("sync-draft-order", job, { singletonKey: quoteId, tx });
     await audit(tx, actor, quoteId, "sync.requested", { send: !!send });
   });
-  console.log("sync queued", { shop: actor.shop, quoteId, send: !!send });
+  logger.info({ shop: actor.shop, quoteId, send: !!send }, "sync queued");
 };
 
 // "Send": APPROVED quote → sync the approved version to its draft order → Shopify's invoice email.
@@ -111,7 +112,7 @@ const runSync = async (admin: AdminApiContext, job: SyncJob) => {
         where: { id: quote.id, shop, syncStatus: "SYNCING" },
         data: { syncStatus: "QUEUED", syncClaimedAt: null },
       });
-      console.log("sync throttled, claim released", { shop, quoteId });
+      logger.info({ shop, quoteId }, "sync throttled, claim released");
       throw error;
     }
     // Rejected input, or a missing permission (scope or plan): nothing changed and retrying
@@ -178,13 +179,13 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
   const after = await drafts.getDraftOrder(admin, result.id);
   const shopifySubtotal = after ? D(after.subtotalPriceSet.presentmentMoney.amount) : null;
   const mismatch = shopifySubtotal !== null && shopifySubtotal.minus(version.total).abs().gte(D("0.01"));
-  console.log("draft order synced", {
+  logger.info({
     quoteId: quote.id,
     draftOrderId: result.id,
     adopted,
     ours: version.total.toString(),
     shopify: shopifySubtotal?.toString() ?? null,
-  });
+  }, "draft order synced");
 
   await db.$transaction(async (tx) => {
     await tx.quote.update({
@@ -226,12 +227,12 @@ const measureSearchLag = (admin: AdminApiContext, quoteId: string) => {
     for (let attempt = 0; attempt < 12; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       if ((await drafts.findDraftOrdersByTag(admin, quoteId)).length) {
-        console.log("search_lag: draft order searchable", { quoteId, ms: Date.now() - start });
+        logger.info({ quoteId, ms: Date.now() - start }, "search_lag: draft order searchable");
         return;
       }
     }
-    console.warn("search_lag: draft order NOT searchable after 60 s", { quoteId, ms: Date.now() - start });
-  })().catch((error: unknown) => console.warn("search_lag: measurement failed", { quoteId, error: String(error) }));
+    logger.warn({ quoteId, ms: Date.now() - start }, "search_lag: draft order NOT searchable after 60 s");
+  })().catch((error: unknown) => logger.warn({ quoteId, error: String(error) }, "search_lag: measurement failed"));
 };
 
 const doDelete = async (admin: AdminApiContext, quote: { id: string; shop: string; draftOrderId: string | null }) => {
@@ -240,7 +241,7 @@ const doDelete = async (admin: AdminApiContext, quote: { id: string; shop: strin
       await drafts.deleteDraftOrder(admin, quote.draftOrderId);
     } catch (error) {
       if (!(error instanceof ShopifyUserErrors)) throw error;
-      console.log("draft order already gone or completed", { quoteId: quote.id, message: error.message });
+      logger.info({ quoteId: quote.id, message: error.message }, "draft order already gone or completed");
     }
   }
   await db.$transaction(async (tx) => {
@@ -259,7 +260,7 @@ const runSendInvoice = async (admin: AdminApiContext, job: SendInvoiceJob) => {
     include: { currentVersion: { select: { versionNumber: true } } },
   });
   if (quote.currentVersionId !== job.versionId || quote.status !== "APPROVED" || !quote.draftOrderId) {
-    console.log("send-invoice skipped", { quoteId: quote.id, status: quote.status }); // superseded or already sent
+    logger.info({ quoteId: quote.id, status: quote.status }, "send-invoice skipped"); // superseded or already sent
     return;
   }
   const draftOrderId = quote.draftOrderId;
@@ -330,7 +331,7 @@ const markSent = async (quoteId: string, job: SendInvoiceJob, invoiceUrl: string
     });
     await audit(tx, system(job.shop, "send-invoice"), quoteId, "quote.sent", { versionId: job.versionId });
   });
-  console.log("quote sent", { shop: job.shop, quoteId, versionId: job.versionId });
+  logger.info({ shop: job.shop, quoteId, versionId: job.versionId }, "quote sent");
 };
 
 // The last retry of a sync job failed (M4.2): stop waiting and ask a person (Retry action).

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { quoteLink } from "../lib/signed-token.server";
@@ -117,7 +118,7 @@ const customerAction = async (
       { quoteId: quote.id, comment: text },
     );
   });
-  console.log("customer quote action", { shop, quoteId: quote.id, action });
+  logger.info({ shop, quoteId: quote.id, action }, "customer quote action");
 };
 
 export { authenticateCustomer, customerAction, listCustomerQuotes, shopFromDest };

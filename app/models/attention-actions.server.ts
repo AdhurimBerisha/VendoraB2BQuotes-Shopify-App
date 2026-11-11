@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
@@ -98,7 +99,7 @@ const resolveAttention = async (actor: StaffActor, quoteId: string, code: Attent
     });
     await audit(tx, actor, quoteId, "attention.resolved", { code, action });
   });
-  console.log("attention resolved", { shop: actor.shop, quoteId, code, action });
+  logger.info({ shop: actor.shop, quoteId, code, action }, "attention resolved");
 };
 
 export { parseLinesKey, resolveAttention };

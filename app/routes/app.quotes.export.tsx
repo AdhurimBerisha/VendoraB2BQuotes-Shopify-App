@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { LoaderFunctionArgs } from "react-router";
 import Papa from "papaparse";
 import db from "../db.server";
@@ -48,7 +49,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     })),
     { escapeFormulae: true }, // a company name starting with = + - @ must not run as a spreadsheet formula
   );
-  console.log("quotes exported", { shop: actor.shop, rows: quotes.length });
+  logger.info({ shop: actor.shop, rows: quotes.length }, "quotes exported");
   return new Response(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { ActionFunctionArgs } from "react-router";
 import { UserError } from "../lib/errors";
 import { rateLimit } from "../lib/rate-limit.server";
@@ -32,7 +33,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (error instanceof UserError) {
       return Response.json({ error: error.status === 403 ? "forbidden" : "failed" }, { status: error.status });
     }
-    console.error("quote request failed", { shop: session.shop, error });
+    logger.error({ shop: session.shop, error }, "quote request failed");
     return Response.json({ error: "failed" }, { status: 500 });
   }
 };

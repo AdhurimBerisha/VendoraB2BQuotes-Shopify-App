@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { QuantityRule } from "../models/pricing";
 import { call } from "./client.server";
@@ -50,7 +51,7 @@ const getVariantPrices = async (
   const prices = new Map<string, VariantPrice>();
   if (variantIds.length === 0) return prices;
   const country = await getLocationCountry(admin, companyLocationId);
-  if (!country) console.warn("company location has no address country", { companyLocationId });
+  if (!country) logger.warn({ companyLocationId }, "company location has no address country");
   for (let i = 0; i < variantIds.length; i += BATCH) {
     const ids = variantIds.slice(i, i + BATCH);
     const response = await call(() =>

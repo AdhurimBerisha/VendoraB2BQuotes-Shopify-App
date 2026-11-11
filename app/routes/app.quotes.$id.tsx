@@ -25,6 +25,7 @@ import { cancelQuote, getQuote, quoteLabel, setExpiry } from "../models/quote.se
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
+import { logger } from "../lib/logger.server";
 import { diffVersions, reviseQuote, saveDraftLines } from "../models/version.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import { getDraftOrderSummary } from "../shopify/draft-orders.server";
@@ -35,7 +36,7 @@ const orNull = async <T,>(what: string, fn: () => Promise<T>): Promise<T | null>
     return await fn();
   } catch (error) {
     if (error instanceof Response) throw error;
-    console.warn("quote page: Shopify data unavailable", { what, message: error instanceof Error ? error.message : String(error) });
+    logger.warn({ what, message: error instanceof Error ? error.message : String(error) }, "quote page: Shopify data unavailable");
     return null;
   }
 };

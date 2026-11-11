@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.server";
 import db from "../db.server";
 import { ConflictError, ForbiddenError, NotFoundError, UserError } from "../lib/errors";
 import type { StaffActor } from "./actor";
@@ -51,7 +52,7 @@ const submitQuote = async (actor: StaffActor, quoteId: string) => {
     }
     return { needsApproval, reasons };
   });
-  console.log("quote submitted", { shop: actor.shop, quoteId, ...result });
+  logger.info({ shop: actor.shop, quoteId, ...result }, "quote submitted");
   if (result.needsApproval) {
     await notify(db, actor.shop, "approvalNeeded", { kind: "managers", except: actor.userId }, {
       quoteId,
@@ -102,7 +103,7 @@ const decide = async (
     });
     return approval.requestedBy;
   });
-  console.log("approval decided", { shop: actor.shop, quoteId, decision });
+  logger.info({ shop: actor.shop, quoteId, decision }, "approval decided");
   await notify(db, actor.shop, decision === "APPROVED" ? "approved" : "rejected", { kind: "user", userId: requestedBy }, {
     quoteId,
     actor: actor.name,
