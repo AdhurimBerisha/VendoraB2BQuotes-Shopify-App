@@ -15,6 +15,10 @@ const rateLimit = (key: string, limit = 60, windowMs = 60_000, now = Date.now())
   return bucket.count <= limit;
 };
 
+// B-23: safe on Render, which sits behind Cloudflare: Cloudflare sets cf-connecting-ip itself and refuses
+// requests that bring their own (checked on staging 2026-11-12: 60 requests with a new fake
+// X-Forwarded-For each still hit the limit). On a host without Cloudflare both headers can be faked:
+// read the address that host's proxy adds instead.
 const clientIp = (request: Request) =>
   request.headers.get("cf-connecting-ip") ??
   request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
