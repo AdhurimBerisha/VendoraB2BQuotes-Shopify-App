@@ -1,0 +1,59 @@
+name: CI
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vendora
+          POSTGRES_PASSWORD: vendora
+          POSTGRES_DB: vendora_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vendora"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Test values only; the test DB name must end in _test (app/test/test-db-url.ts).
+      DATABASE_URL: postgresql://vendora:vendora@localhost:5432/vendora_test?schema=public
+      SHOPIFY_API_KEY: test-key
+      SHOPIFY_API_SECRET: test-secret
+      SHOPIFY_APP_URL: https://vendora.test
+      SCOPES: read_products,read_customers,write_draft_orders
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Typecheck the customer account extension
+        run: npx tsc -p extensions/vendora-customer-quotes
+      - run: npm run check:locales
+      - name: App configs agree on scopes, webhooks and proxy
+        run: node scripts/check-toml-sync.mjs
+      - run: npm test
+      - name: Codegen types are up to date
+        run: npm run codegen:check
+      - name: Production build
+        run: npm run build
+      - name: Browser build has no unresolved Prisma import (B-31)
+        run: "! grep -rqE \"[\\\"']\\.prisma/client\" build/client"
+      # B-24: the known high findings are build tooling and need major upgrades (Prisma 7).
+      # Remove continue-on-error once those are done, so new findings fail the build.
+      - name: Dependency audit (high and critical only)
+        run: npm audit --audit-level=high --omit=dev
+        continue-on-error: true
