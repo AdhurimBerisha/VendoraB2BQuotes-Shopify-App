@@ -8,7 +8,8 @@ const isProduction = process.env.NODE_ENV === "production";
 Sentry.init({
   dsn: SENTRY_DSN,
   enabled: process.env.NODE_ENV !== "test",
-  environment: process.env.NODE_ENV ?? "development",
+  // SENTRY_ENVIRONMENT=staging on the staging host; NODE_ENV is "production" there too.
+  environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
   tracesSampleRate: isProduction ? 0.2 : 1.0,
   profileSessionSampleRate: isProduction ? 0.2 : 1.0,
   profileLifecycle: "trace",

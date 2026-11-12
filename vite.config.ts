@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import path from "node:path";
 import { reactRouter } from "@react-router/dev/vite";
 import { sentryReactRouter } from "@sentry/react-router/vite";
 import { defineConfig, type UserConfig } from "vite";
@@ -67,6 +68,14 @@ export default defineConfig((configEnv) => ({
         testTimeout: 15_000,
       }
     : undefined,
+  // B-31: browser code uses Prisma.Decimal (app/lib/money.ts). @prisma/client's browser entry requires
+  // ".prisma/client/index-browser", which the production build leaves unresolved, so the quote page's
+  // code never loaded outside dev. Point it at the generated file (exists after `prisma generate`).
+  resolve: {
+    alias: {
+      ".prisma/client/index-browser": path.resolve("node_modules/.prisma/client/index-browser.js"),
+    },
+  },
   build: {
     assetsInlineLimit: 0,
   },

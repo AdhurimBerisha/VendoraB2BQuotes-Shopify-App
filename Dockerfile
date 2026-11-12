@@ -5,6 +5,11 @@ WORKDIR /app
 # The whole repo first: npm workspaces (extensions/*) need their package.json files for `npm ci`.
 COPY . .
 RUN npm ci
+# Render passes its env vars to the build as build args. The Sentry plugin uses the token to upload
+# source maps and the commit as the release name (no .git in the image). Both stay in this build
+# stage only; without them the build still works and just skips the upload.
+ARG SENTRY_AUTH_TOKEN
+ARG RENDER_GIT_COMMIT
 RUN npx prisma generate && npm run build
 # Drop dev dependencies so the runtime stage can copy node_modules as is.
 RUN npm prune --omit=dev && npm cache clean --force

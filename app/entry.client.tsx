@@ -8,7 +8,9 @@ import { SENTRY_DATA_COLLECTION, SENTRY_DSN } from "./lib/sentry";
 
 Sentry.init({
   dsn: SENTRY_DSN,
-  environment: import.meta.env.MODE,
+  // ponytail: the browser has no env vars; the staging host name contains "staging". Pass it from the
+  // root loader if host names stop saying so.
+  environment: window.location.hostname.includes("staging") ? "staging" : import.meta.env.MODE,
   dataCollection: SENTRY_DATA_COLLECTION,
   integrations: [
     Sentry.reactRouterTracingIntegration(),
