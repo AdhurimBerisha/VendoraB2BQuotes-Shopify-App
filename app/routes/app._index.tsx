@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import { useTranslation } from "react-i18next";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Prisma } from "@prisma/client";
@@ -18,6 +18,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
   requirePermission(actor, "quote.view");
   const shop = await getShop(actor.shop);
+  // M5.2: owners set the app up first (no row yet = first load after install). The query string
+  // stays: on a full page load it carries what Shopify auth needs.
+  if (shop?.onboardingStep !== "DONE" && can(actor, "settings.manage")) {
+    throw redirect(`/app/onboarding${new URL(request.url).search}`);
+  }
   const prefix = shop?.quotePrefix ?? "Q-";
   const timezone = shop?.timezone ?? "UTC";
   const monthStart = startOfMonthInTz(new Date(), timezone);

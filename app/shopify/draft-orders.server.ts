@@ -1,6 +1,11 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { type Money, toShopifyAmount } from "../lib/money";
-import type { CountryCode, CurrencyCode, DraftOrderAppliedDiscountType } from "../types/admin.types";
+import type {
+  CountryCode,
+  CurrencyCode,
+  DraftOrderAppliedDiscountType,
+  DraftOrderInput as AdminDraftOrderInput,
+} from "../types/admin.types";
 import { call, throwOnUserErrors } from "./client.server";
 
 const quoteTag = (quoteId: string) => `vendora-quote-${quoteId}`;
@@ -99,7 +104,8 @@ const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) =
 };
 type DraftOrderInput = ReturnType<typeof draftOrderInput>;
 
-const createDraftOrder = async (admin: AdminApiContext, input: DraftOrderInput) => {
+// Takes Shopify's full input type: the onboarding connection test sends a custom line, not a quote.
+const createDraftOrder = async (admin: AdminApiContext, input: AdminDraftOrderInput) => {
   const response = await call(() =>
     admin.graphql(
       `#graphql

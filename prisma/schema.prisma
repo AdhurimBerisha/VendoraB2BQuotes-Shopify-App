@@ -159,6 +159,7 @@ model Shop {
   reserveInventory  Boolean   @default(false)
   importSubmittedDrafts Boolean @default(false) // M3.5: company draft orders made outside Vendora become quotes
   notifyEmails      String[]  @default([])
+  onboardingStep    String    @default("WELCOME") // M5.2 setup wizard: a step of STEPS in onboarding.server.ts
   logoUrl           String?
   quoteTerms        String?
   quoteFooter       String? // PDF footer line (M3.1)
