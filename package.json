@@ -35,7 +35,7 @@
     "node": ">=22.12"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.3",
+    "@prisma/client": "^7.10.1",
     "@react-pdf/renderer": "^4.9.0",
     "@react-router/dev": "8.5.1",
     "@react-router/fs-routes": "8.5.1",
@@ -51,7 +51,7 @@
     "papaparse": "^5.7.0",
     "pg-boss": "^12.38.0",
     "pino": "^10.4.0",
-    "prisma": "^6.16.3",
+    "prisma": "^7.10.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.1.9",
