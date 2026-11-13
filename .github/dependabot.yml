@@ -5,6 +5,10 @@ updates:
     target-branch: staging
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    # Major upgrades (Prisma 7, React Router 8, ...) are planned work, not weekly bumps.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       shopify:
         patterns: ["@shopify/*"]
