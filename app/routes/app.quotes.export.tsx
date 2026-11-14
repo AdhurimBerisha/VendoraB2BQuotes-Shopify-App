@@ -4,6 +4,7 @@ import Papa from "papaparse";
 import db from "../db.server";
 import { toShopifyAmount } from "../lib/money";
 import { getActor } from "../models/actor.server";
+import { audit } from "../models/audit.server";
 import { requirePermission } from "../models/permissions";
 import { listFiltersSchema, quoteLabel, quoteWhere, searchFilters } from "../models/quote.server";
 import { getShop, orB2bLost } from "../models/shop.server";
@@ -102,6 +103,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // escapeFormulae: a company name starting with = + - @ must not run as a spreadsheet formula.
   const csv = Papa.unparse(rows, { escapeFormulae: true });
   logger.info({ shop: actor.shop, quotes: quotes.length, rows: rows.length, withLines }, "quotes exported");
+  // M5.4: exports are the access log for protected customer data (who took which data out, when).
+  await audit(db, actor, null, "data.exported", { quotes: quotes.length, rows: rows.length, withLines });
   return new Response(`\uFEFF${csv}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

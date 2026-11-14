@@ -51,6 +51,9 @@ test("the full export has one row per line and only this shop's quotes", async (
     lineTotal: "20.00",
   });
   expect(JSON.stringify(rows)).not.toContain(theirs.id);
+  // M5.4 access log: the export is in this shop's history.
+  const logged = await db.auditEvent.findFirstOrThrow({ where: { shop: SHOP, action: "data.exported" } });
+  expect(logged.data).toEqual({ quotes: 1, rows: 2, withLines: true });
 });
 
 test("the list export stays one row per quote, without the line columns", async () => {
