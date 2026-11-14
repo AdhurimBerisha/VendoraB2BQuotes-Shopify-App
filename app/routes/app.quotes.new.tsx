@@ -11,6 +11,7 @@ import { gid, parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { requirePermission } from "../models/permissions";
 import { createQuote } from "../models/quote.server";
+import { orB2bLost } from "../models/shop.server";
 import { searchCompanies } from "../shopify/companies.server";
 
 // Choose a company location (B-3: nothing pre-selected; B-4: search instead of a capped list).
@@ -18,7 +19,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const actor = await getActor(request);
   requirePermission(actor, "quote.create");
   const q = new URL(request.url).searchParams.get("q")?.trim().slice(0, 100) ?? "";
-  const companies = await searchCompanies(actor.admin, q || undefined);
+  // M5.3: a store that lost B2B has no companies to choose from (the banner in app.tsx says why).
+  const companies = await orB2bLost(actor.shop, { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } }, () =>
+    searchCompanies(actor.admin, q || undefined),
+  );
   return {
     companies: companies.nodes.map((company) => ({
       id: company.id,

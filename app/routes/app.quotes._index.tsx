@@ -11,7 +11,7 @@ import { getActor } from "../models/actor.server";
 import { can, requirePermission } from "../models/permissions";
 import { QUOTE_STATUSES } from "../models/quote";
 import { listFiltersSchema, listQuotes, quoteLabel, searchFilters } from "../models/quote.server";
-import { getShop } from "../models/shop.server";
+import { getShop, orB2bLost } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { companyNames } from "../shopify/companies.server";
 
@@ -23,13 +23,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const prefix = shop?.quotePrefix ?? "Q-";
   const timezone = shop?.timezone ?? "UTC";
 
-  const search = await searchFilters(actor, filters.q, prefix);
+  // M5.3: a store that lost B2B can't read companies; the quotes still list, without names.
+  const search = await orB2bLost(actor.shop, { companyIds: [] }, () => searchFilters(actor, filters.q, prefix));
   const { quotes, nextCursor } = await listQuotes(actor.shop, {
     ...search,
     status: filters.status,
     cursor: filters.cursor,
   });
-  const names = await companyNames(actor.admin, actor.shop, [...new Set(quotes.map((quote) => quote.companyId))]);
+  const names = await orB2bLost(actor.shop, new Map<string, string>(), () =>
+    companyNames(actor.admin, actor.shop, [...new Set(quotes.map((quote) => quote.companyId))]),
+  );
   const staffNames = new Map(staff.map((member) => [member.shopifyUserId, member.displayName]));
 
   return {

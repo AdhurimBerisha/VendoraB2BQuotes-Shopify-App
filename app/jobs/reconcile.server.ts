@@ -12,7 +12,7 @@ import { raise } from "../models/attention.server";
 import { audit } from "../models/audit.server";
 import { notify } from "../models/notify.server";
 import { transition } from "../models/quote.server";
-import { isInstalled } from "../models/shop.server";
+import { checkB2b, isInstalled } from "../models/shop.server";
 import type { SyncJob } from "../models/sync.server";
 import { lineProblems } from "../models/version.server";
 import { linesKey } from "../models/webhooks.server";
@@ -115,6 +115,7 @@ const runReconcileShop = async (shop: string, deps: Deps = defaultDeps) => {
     return;
   }
   const admin = await deps.getAdmin(shop);
+  await checkB2b(admin, shop); // M5.3: daily check that the store still has B2B (sets or clears the banner)
   await getBoss(); // notify and enqueue send jobs inside transactions (see enqueue)
   const quotes = await db.quote.findMany({
     where: { shop, draftOrderId: { not: null }, status: { in: ["APPROVED", "SENT"] } },

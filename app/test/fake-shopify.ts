@@ -264,6 +264,20 @@ const fakeShopify = ({
       );
       return Response.json({ data: { nodes } });
     }
+    if (query.includes("VendoraCompanyNames")) {
+      const nodes = (variables.ids as string[]).map((id) => ({ id, name: `Company ${id.split("/").pop()}` }));
+      return Response.json({ data: { nodes } });
+    }
+    if (query.includes("VendoraCompanySearch")) {
+      // One company that can buy. failNext("VendoraCompanySearch", "accessDenied") = the store lost B2B (M5.3).
+      const company = {
+        id: "gid://shopify/Company/1",
+        name: "Fake Co",
+        mainContact: { id: "gid://shopify/CompanyContact/1" },
+        locations: { nodes: [{ id: "gid://shopify/CompanyLocation/1", name: "Main", currency: "USD" }] },
+      };
+      return Response.json({ data: { companies: { nodes: [company], pageInfo: { hasNextPage: false, endCursor: null } } } });
+    }
     if (query.includes("companyLocation(")) {
       return Response.json({ data: { companyLocation: location } });
     }

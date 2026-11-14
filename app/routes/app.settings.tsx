@@ -1,10 +1,12 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import ErrorBanner from "../components/ErrorBanner";
 import { runAction } from "../lib/action.server";
+import { downloadFrom } from "../lib/download";
 import { parseForm } from "../lib/validation";
 import { getActor } from "../models/actor.server";
 import { type ApprovalRules, parseRules, rulesFromForm } from "../models/approval";
@@ -174,7 +176,39 @@ function ManageSections({ manage }: { manage: ManageData }) {
         </s-table>
       </s-section>
       <ApprovalRulesSection rules={rules} />
+      <ExportSection />
     </>
+  );
+}
+
+// M5.3 (G-11): everything a merchant needs to take their quotes elsewhere.
+function ExportSection() {
+  const { t } = useTranslation();
+  const [exporting, setExporting] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const exportAll = async () => {
+    setExporting(true);
+    setFailed(false);
+    try {
+      await downloadFrom("/app/quotes/export?lines=1", "vendora-quotes-all.csv");
+    } catch (error) {
+      console.error("full quote export failed", error);
+      setFailed(true);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <s-section heading={t("settings.export.title")}>
+      <s-stack direction="block" gap="base">
+        <s-paragraph>{t("settings.export.help")}</s-paragraph>
+        <s-button onClick={exportAll} {...(exporting ? { loading: true } : {})}>
+          {t("settings.export.button")}
+        </s-button>
+        {failed && <s-banner tone="critical">{t("quotes.exportFailed")}</s-banner>}
+      </s-stack>
+    </s-section>
   );
 }
 

@@ -11,6 +11,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "welcomeBack": "Welcome back. Your quotes and settings are still here.",
     "metrics": {
       "drafts": "Drafts",
       "pending": "Pending approval",
@@ -408,6 +409,11 @@
   },
   "settings": {
     "title": "Settings",
+    "export": {
+      "title": "Export",
+      "help": "Download every quote with its lines as a CSV file: one row per line of each quote's current version.",
+      "button": "Export all quotes"
+    },
     "notifications": {
       "title": "Notifications",
       "help": "Emails go to {{email}}. Choose which ones you get.",
@@ -508,6 +514,13 @@
       "notFound": "This quote link doesn't work. It may have expired or been mistyped. Ask the seller for a new link.",
       "rateLimited": "Too many requests. Wait a minute, then try again.",
       "failed": "Something went wrong. Try again later."
+    }
+  },
+  "eligibility": {
+    "b2bUnavailable": "B2B isn't available on this store any more, so Vendora can't create or send quotes. Your existing quotes stay visible. Companies are part of Shopify Plus.",
+    "scopesMissing": "Vendora needs new permissions to keep working. Close the app, open it again and approve the update.",
+    "errors": {
+      "b2bUnavailable": "B2B isn't available on this store any more, so this quote can't be sent to Shopify."
     }
   },
   "onboarding": {

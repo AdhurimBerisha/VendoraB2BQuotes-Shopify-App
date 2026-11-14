@@ -3,6 +3,8 @@ import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 import { z } from "zod";
 import { UserError } from "../lib/errors";
+import { ShopifyDenied } from "../shopify/client.server";
+import { searchCompanies } from "../shopify/companies.server";
 import { fetchShopInfo } from "../shopify/shop.server";
 import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
@@ -11,19 +13,80 @@ import { requirePermission } from "./permissions";
 // Called after Shopify auth (install, reinstall, token refresh). Safe to call many times.
 const upsertShopOnInstall = async (admin: AdminApiContext, shop: string) => {
   const info = await fetchShopInfo(admin);
+  // M5.3: back before shop/redact deleted the data (~48 h after uninstall): the quotes are still here.
+  const existing = await db.shop.findUnique({ where: { id: shop }, select: { uninstalledAt: true } });
+  const reinstalled = !!existing?.uninstalledAt;
   const data = {
     shopGid: info.id,
     name: info.name,
     timezone: info.ianaTimezone,
     currencyCode: info.currencyCode,
     uninstalledAt: null,
+    // The store may have changed while the app was gone: start with a clean B2B flag.
+    ...(reinstalled && { welcomeBack: true, b2bUnavailable: false }),
   };
   await db.shop.upsert({
     where: { id: shop },
     create: { id: shop, ...data },
     update: data,
   });
-  logger.info({ shop, timezone: data.timezone, currency: data.currencyCode }, "shop upserted");
+  logger.info({ shop, timezone: data.timezone, currency: data.currencyCode, reinstalled }, "shop upserted");
+  return { reinstalled };
+};
+
+// True once after a reinstall (the dashboard's "welcome back" note): reading the flag clears it.
+const takeWelcomeBack = async (shop: string) => {
+  const { count } = await db.shop.updateMany({ where: { id: shop, welcomeBack: true }, data: { welcomeBack: false } });
+  return count === 1;
+};
+
+// M5.3 B2B loss. A store that leaves Plus loses companies: Shopify then answers company reads
+// with ACCESS_DENIED. The flag shows a banner (app.tsx) and blocks sending (assertB2b).
+const setB2bUnavailable = async (shop: string, unavailable: boolean) => {
+  const { count } = await db.shop.updateMany({
+    where: { id: shop, b2bUnavailable: !unavailable },
+    data: { b2bUnavailable: unavailable },
+  });
+  if (count) logger.warn({ shop, unavailable }, "b2b availability changed");
+};
+
+// Asks Shopify whether the store (still) has B2B and saves the answer. Used by the nightly
+// reconcile, after a denied sync, and on page loads while the flag is set (so it clears itself).
+const checkB2b = async (admin: AdminApiContext, shop: string) => {
+  try {
+    await searchCompanies(admin);
+  } catch (error) {
+    if (!(error instanceof ShopifyDenied)) throw error;
+    await setB2bUnavailable(shop, true);
+    return false;
+  }
+  await setB2bUnavailable(shop, false);
+  return true;
+};
+
+// For pages that read companies: a denied read flags the shop and the page carries on with
+// `fallback`, so the quotes stay visible (without company names).
+const orB2bLost = async <T>(shop: string, fallback: T, read: () => Promise<T>): Promise<T> => {
+  try {
+    return await read();
+  } catch (error) {
+    if (!(error instanceof ShopifyDenied)) throw error;
+    await setB2bUnavailable(shop, true);
+    return fallback;
+  }
+};
+
+const assertB2b = async (shop: string) => {
+  const record = await db.shop.findUnique({ where: { id: shop }, select: { b2bUnavailable: true } });
+  if (record?.b2bUnavailable) throw new UserError("eligibility.errors.b2bUnavailable");
+};
+
+// Scopes the app asks for (SCOPES) that the session's token doesn't have. Shopify may list only
+// write_x when the app asked for read_x and write_x.
+const missingScopes = (grantedScopes: string | undefined) => {
+  const granted = (grantedScopes ?? "").split(",").map((scope) => scope.trim());
+  const required = (process.env.SCOPES ?? "").split(",").map((scope) => scope.trim()).filter(Boolean);
+  return required.filter((scope) => !granted.includes(scope) && !granted.includes(scope.replace(/^read_/, "write_")));
 };
 
 // Sessions go now; data stays until shop/redact (~48 h later) so a quick reinstall keeps it.
@@ -126,14 +189,19 @@ const saveBranding = async (actor: StaffActor, branding: Branding) => {
 };
 
 export {
+  assertB2b,
   brandingFromForm,
+  checkB2b,
   generalSettingsFromForm,
   getShop,
   isAllowedLogoUrl,
   isInstalled,
   markUninstalled,
+  missingScopes,
+  orB2bLost,
   saveBranding,
   saveGeneralSettings,
+  takeWelcomeBack,
   upsertShopOnInstall,
 };
 export type { Branding, GeneralSettings };

@@ -7,6 +7,7 @@ import { searchCompanies } from "../shopify/companies.server";
 import { createDraftOrder, deleteDraftOrder, getDraftOrder, quoteTag } from "../shopify/draft-orders.server";
 import type { StaffActor } from "./actor";
 import { requirePermission } from "./permissions";
+import { missingScopes } from "./shop.server";
 
 // M5.2 setup wizard. Shop.onboardingStep holds the step the shop is on.
 const STEPS = ["WELCOME", "ELIGIBILITY", "SETTINGS", "TEAM", "CONNECTION", "SAMPLE", "DONE"] as const;
@@ -14,17 +15,11 @@ type Step = (typeof STEPS)[number];
 
 type Check = { key: "b2b" | "company" | "mainContact" | "scopes"; ok: boolean };
 
-// Shopify may list only write_x when the app asked for read_x and write_x.
-const hasScope = (granted: string[], scope: string) =>
-  granted.includes(scope) || granted.includes(scope.replace(/^read_/, "write_"));
-
 // What the store needs before a first quote can work. Every failing check blocks the wizard.
 // ponytail: looks at the first 20 companies only (searchCompanies' page); a store whose first 20
 // all lack a main contact fails the check even if a later one has it.
 const runEligibility = async (admin: AdminApiContext, grantedScopes: string | undefined): Promise<Check[]> => {
-  const granted = (grantedScopes ?? "").split(",").map((scope) => scope.trim());
-  const required = (process.env.SCOPES ?? "").split(",").map((scope) => scope.trim()).filter(Boolean);
-  const scopes: Check = { key: "scopes", ok: required.every((scope) => hasScope(granted, scope)) };
+  const scopes: Check = { key: "scopes", ok: missingScopes(grantedScopes).length === 0 };
 
   let companies;
   try {

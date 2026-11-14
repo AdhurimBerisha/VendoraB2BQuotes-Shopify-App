@@ -10,7 +10,7 @@ import { getActor } from "../models/actor.server";
 import { attentionItems } from "../models/attention";
 import { can, requirePermission } from "../models/permissions";
 import { quoteLabel } from "../models/quote.server";
-import { getShop } from "../models/shop.server";
+import { getShop, takeWelcomeBack } from "../models/shop.server";
 
 const EXPIRING_DAYS = 3;
 
@@ -83,11 +83,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       expires: quote.expiresAt ? formatDate(quote.expiresAt, actor.locale, timezone) : "",
     })),
     canCreate: can(actor, "quote.create"),
+    // M5.3: shown once after a reinstall that kept the data.
+    welcomeBack: shop?.welcomeBack ? await takeWelcomeBack(actor.shop) : false,
   };
 };
 
 export default function Dashboard() {
-  const { metrics, attention, pending, expiring, canCreate } = useLoaderData<typeof loader>();
+  const { metrics, attention, pending, expiring, canCreate, welcomeBack } = useLoaderData<typeof loader>();
   const { t } = useTranslation();
   const metric = (label: string, value: string | number) => (
     <s-box padding="base" border="base" borderRadius="base">
@@ -104,6 +106,11 @@ export default function Dashboard() {
         <s-button slot="primary-action" variant="primary" href="/app/quotes/new">
           {t("quotes.new")}
         </s-button>
+      )}
+      {welcomeBack && (
+        <s-banner tone="success" dismissible>
+          {t("dashboard.welcomeBack")}
+        </s-banner>
       )}
       <s-section>
         <s-grid gridTemplateColumns="repeat(4, 1fr)" gap="base">

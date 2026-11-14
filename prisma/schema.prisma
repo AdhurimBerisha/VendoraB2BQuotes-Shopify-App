@@ -160,6 +160,8 @@ model Shop {
   importSubmittedDrafts Boolean @default(false) // M3.5: company draft orders made outside Vendora become quotes
   notifyEmails      String[]  @default([])
   onboardingStep    String    @default("WELCOME") // M5.2 setup wizard: a step of STEPS in onboarding.server.ts
+  b2bUnavailable    Boolean   @default(false) // M5.3: Shopify refused a company read (store left Plus); sending is blocked
+  welcomeBack       Boolean   @default(false) // M5.3: reinstalled before shop/redact; the dashboard says so once
   logoUrl           String?
   quoteTerms        String?
   quoteFooter       String? // PDF footer line (M3.1)
