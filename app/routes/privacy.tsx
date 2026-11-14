@@ -97,7 +97,12 @@ export default function Privacy() {
           </tr>
           <tr>
             <td>Render</td>
-            <td>Hosting and database</td>
+            <td>Hosting</td>
+            <td>Frankfurt, Germany (EU)</td>
+          </tr>
+          <tr>
+            <td>Supabase</td>
+            <td>Database</td>
             <td>Frankfurt, Germany (EU)</td>
           </tr>
           <tr>
