@@ -17,6 +17,7 @@ import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { BLOCKING, type LineProblem } from "./pricing";
 import { transition } from "./quote.server";
+import { assertB2b, checkB2b } from "./shop.server";
 
 // ponytail: draftOrderCreate has no @idempotent support, so a crashed attempt is only
 // reclaimed after STALE_MS and found again by tag. Relies on Shopify's draft-order search
@@ -39,6 +40,7 @@ const system = (shop: string, reason: string): SystemActor => ({ type: "SYSTEM",
 // A SYNCED quote may be synced again (draftOrderUpdate).
 const requestSync = async (actor: Actor, quoteId: string, send?: { message: string }) => {
   requirePermission(actor, "quote.send");
+  await assertB2b(actor.shop); // M5.3: without B2B every draft order for a company fails
   await getBoss(); // start pg-boss outside the transaction (see enqueue)
   await db.$transaction(async (tx) => {
     const { count } = await tx.quote.updateMany({
@@ -124,6 +126,8 @@ const runSync = async (admin: AdminApiContext, job: SyncJob) => {
         await raise(tx, shop, quote.id, { code: "SYNC_FAILED", message });
         await audit(tx, system(shop, "sync-draft-order"), quote.id, "sync.failed", { message });
       });
+      // M5.3: denied because the store lost B2B? Then every page says so right away.
+      if (error instanceof ShopifyDenied) await checkB2b(admin, shop);
       return;
     }
     // Ambiguous (network, timeout, 5xx): Shopify may have done it. Stay SYNCING

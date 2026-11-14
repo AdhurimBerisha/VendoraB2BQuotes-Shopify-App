@@ -34,7 +34,9 @@ declare global {
 const startBoss = async () => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  const boss = new PgBoss(connectionString);
+  // max 3 (default 10): staging's Supabase session pooler allows ~15 connections in total, and Prisma
+  // takes up to `connection_limit` (5) from DATABASE_URL. pg ignores that Prisma-only parameter.
+  const boss = new PgBoss({ connectionString, max: 3 });
   boss.on("error", (error) => logger.error({ error }, "[pg-boss]"));
   await boss.start();
   for (const [name, config] of Object.entries(QUEUES)) {

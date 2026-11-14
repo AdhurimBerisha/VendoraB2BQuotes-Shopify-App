@@ -1,0 +1,46 @@
+# Weekly off-site database backup (roadmap/12 §5). The dump is encrypted with age to a public key
+# (repo variable BACKUP_AGE_RECIPIENT); only the offline private key can open it.
+# ponytail: kept as a GitHub artifact for 90 days (the longest a private repo allows; counts toward
+# the 500 MB free Actions storage). Move to object storage when the DB grows past ~30 MB per dump.
+name: backup
+
+on:
+  schedule:
+    - cron: "0 2 * * 0" # Sundays 02:00 UTC; schedules only run from the default branch (main)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Dump (schemas public + pgboss) and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL" || { echo "secret BACKUP_DATABASE_URL is not set"; exit 1; }
+          test -n "$RECIPIENT" || { echo "variable BACKUP_AGE_RECIPIENT is not set"; exit 1; }
+          sudo apt-get install -y -qq age >/dev/null
+          # libpq rejects Prisma's ?connection_limit=…, so drop the query string.
+          export PGURL="${DATABASE_URL%%\?*}"
+          file="vendora-$(date -u +%F).dump.age"
+          # postgres:18 client: pg_dump must be at least the server's major version.
+          docker run --rm -e PGURL postgres:18 \
+            pg_dump "$PGURL" --format=custom --no-owner --no-privileges -n public -n pgboss \
+            | age -r "$RECIPIENT" -o "$file"
+          size=$(stat -c %s "$file")
+          test "$size" -gt 1000 || { echo "dump is only $size bytes"; exit 1; }
+          echo "FILE=$file" >> "$GITHUB_ENV"
+          echo "backup $file: $size bytes"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 90
+          if-no-files-found: error

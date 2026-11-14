@@ -31,3 +31,6 @@ ROADMAP.md
 
 # M4.4 generated load-test CSVs
 load/*.csv
+
+# Playwright MCP page snapshots (may contain store data)
+.playwright-mcp/

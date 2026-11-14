@@ -11,6 +11,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "welcomeBack": "Welcome back. Your quotes and settings are still here.",
     "metrics": {
       "drafts": "Drafts",
       "pending": "Pending approval",
@@ -408,6 +409,11 @@
   },
   "settings": {
     "title": "Settings",
+    "export": {
+      "title": "Export",
+      "help": "Download every quote with its lines as a CSV file: one row per line of each quote's current version.",
+      "button": "Export all quotes"
+    },
     "notifications": {
       "title": "Notifications",
       "help": "Emails go to {{email}}. Choose which ones you get.",
@@ -508,6 +514,96 @@
       "notFound": "This quote link doesn't work. It may have expired or been mistyped. Ask the seller for a new link.",
       "rateLimited": "Too many requests. Wait a minute, then try again.",
       "failed": "Something went wrong. Try again later."
+    }
+  },
+  "eligibility": {
+    "b2bUnavailable": "B2B isn't available on this store any more, so Vendora can't create or send quotes. Your existing quotes stay visible. Companies are part of Shopify Plus.",
+    "scopesMissing": "Vendora needs new permissions to keep working. Close the app, open it again and approve the update.",
+    "errors": {
+      "b2bUnavailable": "B2B isn't available on this store any more, so this quote can't be sent to Shopify."
+    }
+  },
+  "onboarding": {
+    "title": "Set up Vendora",
+    "progress": "Step {{current}} of {{total}}",
+    "continue": "Continue",
+    "skip": "Skip setup",
+    "steps": {
+      "WELCOME": {
+        "title": "Welcome to Vendora",
+        "intro": "Vendora turns B2B quotes into Shopify draft orders. Setup takes a few minutes. Here is what Vendora adds to your store:"
+      },
+      "ELIGIBILITY": {
+        "title": "Check your store",
+        "intro": "Vendora needs these to create quotes for your B2B customers."
+      },
+      "SETTINGS": {
+        "title": "Approval rules",
+        "intro": "Quotes within these rules are approved automatically when submitted. Anything above them waits for a manager. Quote numbers start at Q-1001 and quotes expire after 30 days; you can change this and more in Settings later."
+      },
+      "TEAM": {
+        "title": "Your team",
+        "intro": "Staff appear in Vendora the first time they open the app. New staff start as sales reps; you change roles in Settings → Team."
+      },
+      "CONNECTION": {
+        "title": "Test the connection",
+        "intro": "Vendora creates a test draft order for one of your companies, reads it back and deletes it. Nothing is sent to anyone."
+      },
+      "SAMPLE": {
+        "title": "Create your first quote",
+        "intro": "You're ready. Pick a company location, add products and submit the quote. Nothing is sent to the buyer until you choose to send it."
+      }
+    },
+    "welcome": {
+      "draftOrders": "A draft order in Shopify for every approved quote, kept in sync when the quote changes.",
+      "emails": "Emails to your team and your buyers: approvals, quotes and reminders before a quote expires.",
+      "customerPage": "A page in your buyers' customer accounts where they see, accept or decline their quotes."
+    },
+    "checks": {
+      "ok": "OK",
+      "failed": "Needs fixing",
+      "fix": "Fix this",
+      "recheck": "Check again",
+      "b2b": {
+        "pass": "Your store has B2B.",
+        "fail": "Your store doesn't have B2B. Companies are part of Shopify Plus."
+      },
+      "company": {
+        "pass": "You have at least one company.",
+        "fail": "Add a company in Shopify admin → Customers → Companies."
+      },
+      "mainContact": {
+        "pass": "A company has a main contact and a location.",
+        "fail": "Give one of your companies a main contact and a location. Quotes are made for a contact at a location."
+      },
+      "scopes": {
+        "pass": "Vendora has the permissions it needs.",
+        "fail": "Vendora is missing permissions. Close the app, open it again and approve the update."
+      }
+    },
+    "settings": {
+      "maxTotal": "Maximum quote total without approval ({{currency}})",
+      "maxTotalHelp": "Quotes above this total need approval. You can add limits for other currencies in Settings.",
+      "differentApproverHelp": "Turn this off if you're the only person using Vendora, or your own quotes above the limits can never be approved.",
+      "save": "Save and continue"
+    },
+    "team": {
+      "OWNER": "everything, including settings and the team.",
+      "MANAGER": "creates, approves and sends quotes, and fixes problems.",
+      "REP": "creates and sends quotes; quotes above the limits need approval.",
+      "VIEWER": "can look at quotes, nothing else."
+    },
+    "connection": {
+      "run": "Run test",
+      "passed": "It works. The test draft order was created and deleted.",
+      "failed": "Shopify refused the test draft order: {{message}}"
+    },
+    "sample": {
+      "create": "Create your first quote"
+    },
+    "errors": {
+      "blocked": "Fix the items marked \"Needs fixing\" first, then check again.",
+      "noCompany": "No company with a main contact and a location was found. Add one in Shopify admin → Customers → Companies."
     }
   }
 }
