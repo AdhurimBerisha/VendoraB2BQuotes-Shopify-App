@@ -9,7 +9,7 @@ export default function Terms() {
   return (
     <main className={styles.legal}>
       <h1>Terms of service</h1>
-      <p>Last updated: 14 November 2026</p>
+      <p>Last updated: 16 November 2026</p>
 
       <h2>1. Who we are</h2>
       <p>
@@ -41,6 +41,10 @@ export default function Terms() {
         Your data stays yours. We use it only to provide Vendora, as described in our{" "}
         <a href="/privacy">privacy policy</a>. You can export all quotes in Settings at any time. When you
         uninstall Vendora, your data is deleted about 48 hours later, when Shopify asks us to.
+      </p>
+      <p>
+        Our <a href="/dpa">data processing agreement</a> is part of these terms and covers how we process your
+        customers&apos; personal data for you.
       </p>
 
       <h2>5. Availability</h2>
