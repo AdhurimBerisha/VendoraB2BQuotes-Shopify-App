@@ -4,7 +4,8 @@ import { useEffect, useState } from "preact/hooks";
 
 // The same extension ships with every app (production, staging, dev), so the backend is chosen by
 // the app the session token was issued for: its `aud` claim is the app's client id. To test against
-// local code, add the dev app's client id with the tunnel URL `shopify app dev` prints.
+// local code, add the Vendora Dev app (e32ebb2f0da0fcd81495a714e23f344a) with the tunnel URL
+// `shopify app dev` prints; don't commit that line (the tunnel changes every run).
 const BACKENDS: Record<string, string> = {
   "998fc0d45282e0a52c16dea36aaf686b": "https://vendora-xxys.onrender.com", // vendora (production)
   b278ef44271f858d91b9874d5698fdc9: "https://vendora-staging-f4u9.onrender.com", // Vendora Staging
