@@ -1,7 +1,8 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# The production app "vendora", hosted on Render (vendora-production). Local development uses
+# shopify.app.dev.toml; keep scopes, webhooks and the proxy in sync (scripts/check-toml-sync.mjs).
 
 client_id = "998fc0d45282e0a52c16dea36aaf686b"
-application_url = "https://example.com"
+application_url = "https://vendora-xxys.onrender.com"
 embedded = true
 name = "vendora"
 
@@ -33,11 +34,11 @@ api_version = "2026-10"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://vendora-xxys.onrender.com/api/auth" ]
 
 [build]
-include_config_on_deploy = true
-automatically_update_urls_on_dev = true
+# `shopify app dev` must never rewrite the production URLs.
+automatically_update_urls_on_dev = false
 
 # M3.5 Option 2: the theme's "Request a quote" block posts to /apps/vendora/quote-request.
 [app_proxy]

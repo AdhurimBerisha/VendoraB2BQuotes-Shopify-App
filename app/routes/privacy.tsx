@@ -9,7 +9,7 @@ export default function Privacy() {
   return (
     <main className={styles.legal}>
       <h1>Privacy policy</h1>
-      <p>Last updated: 14 November 2026</p>
+      <p>Last updated: 16 November 2026</p>
 
       <h2>Who we are</h2>
       <p>
@@ -104,6 +104,11 @@ export default function Privacy() {
             <td>Supabase</td>
             <td>Database</td>
             <td>Frankfurt, Germany (EU)</td>
+          </tr>
+          <tr>
+            <td>GitHub</td>
+            <td>Encrypted backups (unreadable without our offline key)</td>
+            <td>United States</td>
           </tr>
           <tr>
             <td>Sentry</td>
