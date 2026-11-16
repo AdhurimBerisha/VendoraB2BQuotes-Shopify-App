@@ -2,9 +2,22 @@ import "@shopify/ui-extensions/preact";
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
-// The app backend. ponytail: one constant, set to staging on Render. To test this page against
-// local code, set it to the tunnel URL `shopify app dev` prints; for production (M6.1) to the real URL.
-const BACKEND_URL = "https://vendora-staging-f4u9.onrender.com";
+// The same extension ships with every app (production, staging, dev), so the backend is chosen by
+// the app the session token was issued for: its `aud` claim is the app's client id. To test against
+// local code, add the dev app's client id with the tunnel URL `shopify app dev` prints.
+const BACKENDS: Record<string, string> = {
+  "998fc0d45282e0a52c16dea36aaf686b": "https://vendora-xxys.onrender.com", // vendora (production)
+  b278ef44271f858d91b9874d5698fdc9: "https://vendora-staging-f4u9.onrender.com", // Vendora Staging
+};
+
+const backendFor = (token: string) => {
+  const payload = token.split(".")[1] ?? "";
+  const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+  const aud: unknown = JSON.parse(json).aud;
+  const url = typeof aud === "string" ? BACKENDS[aud] : undefined;
+  if (!url) throw new Error(`Vendora: no backend for app ${String(aud)}`);
+  return url;
+};
 
 // Shape of GET /api/customer/quotes (app/models/customer-quotes.server.ts).
 type CustomerQuote = {
@@ -21,7 +34,7 @@ type QuoteAction = "decline" | "changes";
 
 const api = async (path: string, init: RequestInit = {}) => {
   const token = await shopify.sessionToken.get();
-  const response = await fetch(`${BACKEND_URL}${path}`, {
+  const response = await fetch(`${backendFor(token)}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });

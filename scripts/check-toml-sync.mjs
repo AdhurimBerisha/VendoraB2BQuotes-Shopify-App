@@ -1,6 +1,6 @@
-// Fails if shopify.app.toml and shopify.app.staging.toml disagree on scopes, webhooks or the app proxy.
+// Fails if shopify.app.toml and the staging/dev configs disagree on scopes, webhooks or the app proxy.
 // Only client_id, name and URLs may differ between the two apps. Run: node scripts/check-toml-sync.mjs
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const SECTIONS = ["access_scopes", "webhooks", "app_proxy"];
 
@@ -19,9 +19,10 @@ const pick = (file) => {
 };
 
 const main = pick("shopify.app.toml");
-const staging = pick("shopify.app.staging.toml");
-if (!main || main !== staging) {
-  console.error("shopify.app.toml and shopify.app.staging.toml differ in scopes, webhooks or app proxy");
-  process.exit(1);
+for (const other of ["shopify.app.staging.toml", "shopify.app.dev.toml"].filter((f) => existsSync(f))) {
+  if (!main || main !== pick(other)) {
+    console.error(`shopify.app.toml and ${other} differ in scopes, webhooks or app proxy`);
+    process.exit(1);
+  }
 }
 console.log("app configs in sync");

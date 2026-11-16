@@ -16,19 +16,27 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false # one database failing must not skip the other
+      matrix:
+        include:
+          - db: production
+            secret: BACKUP_PRODUCTION_DATABASE_URL
+          - db: staging
+            secret: BACKUP_DATABASE_URL
     steps:
       - name: Dump (schemas public + pgboss) and encrypt
         env:
-          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets[matrix.secret] }}
           RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: |
           set -euo pipefail
-          test -n "$DATABASE_URL" || { echo "secret BACKUP_DATABASE_URL is not set"; exit 1; }
+          test -n "$DATABASE_URL" || { echo "secret ${{ matrix.secret }} is not set"; exit 1; }
           test -n "$RECIPIENT" || { echo "variable BACKUP_AGE_RECIPIENT is not set"; exit 1; }
           sudo apt-get install -y -qq age >/dev/null
           # libpq rejects Prisma's ?connection_limit=…, so drop the query string.
           export PGURL="${DATABASE_URL%%\?*}"
-          file="vendora-$(date -u +%F).dump.age"
+          file="vendora-${{ matrix.db }}-$(date -u +%F).dump.age"
           # postgres:18 client: pg_dump must be at least the server's major version.
           docker run --rm -e PGURL postgres:18 \
             pg_dump "$PGURL" --format=custom --no-owner --no-privileges -n public -n pgboss \
