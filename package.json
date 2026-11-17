@@ -46,7 +46,7 @@
     "@shopify/app-bridge-react": "^4.2.15",
     "@shopify/shopify-app-react-router": "^4.0.2",
     "@shopify/shopify-app-session-storage-prisma": "^11.0.3",
-    "i18next": "^26.5.12",
+    "i18next": "^26.7.2",
     "isbot": "^5.2.3",
     "nodemailer": "^10.6.0",
     "papaparse": "^5.7.0",
