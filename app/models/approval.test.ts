@@ -43,6 +43,15 @@ test("reasons explain themselves", () => {
   expect(reason).toEqual({ code: "DISCOUNT_OVER", detail: "22.5% > 15%" });
 });
 
+test("total reason shows both amounts as money", () => {
+  const [reason] = approvalReasons(
+    { effectiveDiscountPct: D(0), total: D("24881") },
+    rules({ maxDiscountPct: 15, maxTotalByCurrency: { USD: 10000 } }),
+    "USD",
+  );
+  expect(reason).toEqual({ code: "TOTAL_OVER", detail: "$24,881.00 > $10,000.00" });
+});
+
 test("parseRules fills missing keys and survives bad data", () => {
   expect(parseRules({ alwaysRequire: true })).toEqual({ ...DEFAULT_RULES, alwaysRequire: true });
   expect(parseRules(null)).toEqual(DEFAULT_RULES);

@@ -171,7 +171,11 @@
       "pdfFor": "Download the PDF of version {{number}}",
       "added": "Added {{title}} × {{afterQty}} at {{afterPrice}}",
       "removed": "Removed {{title}}",
-      "changed": "{{title}}: quantity {{beforeQty}} → {{afterQty}}, price {{beforePrice}} → {{afterPrice}}, discount {{beforeDiscount}} % → {{afterDiscount}} %"
+      "changed": "{{title}}: {{changes}}",
+      "quantity": "quantity {{before}} → {{after}}",
+      "price": "price {{before}} → {{after}}",
+      "discount": "discount {{before}} % → {{after}} %",
+      "lineTotal": "line total {{before}} → {{after}}"
     },
     "history": {
       "title": "History",
