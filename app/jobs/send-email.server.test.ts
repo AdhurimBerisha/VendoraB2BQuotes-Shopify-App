@@ -82,6 +82,7 @@ test("refused for this email (bad field, testing sender to someone else): droppe
 
 test("no API key: skipped with a warning", async () => {
   vi.stubEnv("RESEND_API_KEY", "");
+  vi.stubEnv("SMTP_URL", "");
   const fetchMock = vi.fn();
   await runSendEmail(job(), { fetchImpl: fetchMock as unknown as typeof fetch });
   expect(fetchMock).not.toHaveBeenCalled();
@@ -94,4 +95,38 @@ test("uninstalled shop: skipped", async () => {
   await runSendEmail({ ...job(), shop: shop.id }, { fetchImpl: fetchMock as unknown as typeof fetch });
   expect(fetchMock).not.toHaveBeenCalled();
   await redactShop(shop.id);
+});
+
+const withSmtp = () => {
+  vi.stubEnv("RESEND_API_KEY", "");
+  vi.stubEnv("SMTP_URL", "smtps://me%40gmail.test:pw@smtp.gmail.test:465");
+  vi.stubEnv("EMAIL_FROM", "Vendora <me@gmail.test>");
+};
+
+const smtpError = (responseCode: number) => Object.assign(new Error(`SMTP ${responseCode}`), { responseCode });
+
+test("SMTP: without a Resend key the rendered email goes through SMTP", async () => {
+  withSmtp();
+  const sendMail = vi.fn(async () => ({ messageId: "m-1" }));
+  const fetchMock = vi.fn();
+
+  await runSendEmail(job(), { sendMail, fetchImpl: fetchMock as unknown as typeof fetch });
+
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(sendMail).toHaveBeenCalledTimes(1);
+  expect(sendMail.mock.calls[0]).toEqual([
+    expect.objectContaining({ from: "Vendora <me@gmail.test>", to: "rep@shop.test", subject: "Approved: Q-1001" }),
+  ]);
+});
+
+test("SMTP: a refused address is dropped, an outage or bad password is retried", async () => {
+  withSmtp();
+  for (const code of [550, 553]) {
+    const sendMail = vi.fn(async () => Promise.reject(smtpError(code)));
+    await expect(runSendEmail(job(), { sendMail })).resolves.toBeUndefined();
+  }
+  for (const code of [421, 454, 535]) {
+    const sendMail = vi.fn(async () => Promise.reject(smtpError(code)));
+    await expect(runSendEmail(job(), { sendMail })).rejects.toThrow(`SMTP ${code}`);
+  }
 });

@@ -48,6 +48,7 @@
     "@shopify/shopify-app-session-storage-prisma": "^11.0.3",
     "i18next": "^26.5.12",
     "isbot": "^5.2.3",
+    "nodemailer": "^10.6.0",
     "papaparse": "^5.7.0",
     "pg-boss": "^12.38.2",
     "pino": "^10.4.0",
@@ -90,7 +91,8 @@
   ],
   "overrides": {
     "p-map": "^4.0.0",
-    "qs": "^6.16.0"
+    "qs": "^6.16.0",
+    "deepmerge-ts": "^8.0.2"
   },
   "resolutions": {
     "qs": "^6.16.0"
