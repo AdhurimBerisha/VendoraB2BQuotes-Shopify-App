@@ -26,8 +26,9 @@ Built on the Shopify React Router app template: React Router 7, Prisma on Postgr
 |---|---|---|
 | `DATABASE_URL` | `postgresql://vendora:vendora@localhost:5432/vendora?schema=public` | |
 | `APP_SIGNING_SECRET` | any long random string | signs customer quote links; `APP_SIGNING_SECRET_OLD` keeps old links valid during a rotation |
-| `RESEND_API_KEY` | optional | without it, notification emails are not sent |
-| `EMAIL_FROM` | optional | sender address for notification emails |
+| `RESEND_API_KEY` | optional | sends notification emails through Resend (needs an own, verified domain) |
+| `SMTP_URL` | optional | used when `RESEND_API_KEY` is empty, e.g. Gmail with an app password: `smtps://you%40gmail.com:apppassword@smtp.gmail.com:465` |
+| `EMAIL_FROM` | optional | sender address; with Gmail it must be that Gmail address. Without it and one of the two above, notification emails are not sent |
 
 `.env.test`, used by `npm test`. The database name must end in `_test`; the tests refuse to run otherwise.
 
