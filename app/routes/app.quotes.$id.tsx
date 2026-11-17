@@ -445,6 +445,9 @@ function ProblemsBanner({
           <s-list-item key={message}>{message}</s-list-item>
         ))}
       </s-unordered-list>
+      <s-link href="/help#troubleshooting" target="_blank">
+        {t("help.links.troubleshooting")}
+      </s-link>
     </s-banner>
   );
 }

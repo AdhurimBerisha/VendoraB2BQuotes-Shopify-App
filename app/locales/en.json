@@ -1,5 +1,5 @@
 {
-  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "jobs": "Jobs", "settings": "Settings" },
+  "nav": { "dashboard": "Dashboard", "quotes": "Quotes", "jobs": "Jobs", "settings": "Settings", "help": "Help" },
   "common": { "save": "Save" },
   "roles": { "OWNER": "Owner", "MANAGER": "Manager", "REP": "Sales rep", "VIEWER": "Viewer" },
   "errors": {
@@ -382,6 +382,34 @@
       "tooLarge": "Files can be up to {{maxMb}} MB.",
       "noFile": "Choose a CSV file.",
       "notReady": "This import was already added or isn't ready yet."
+    }
+  },
+  "help": {
+    "title": "Help",
+    "docs": {
+      "title": "Help center",
+      "sections": {
+        "getting-started": "Getting started",
+        "quotes": "Creating a quote",
+        "csv": "Importing a CSV file",
+        "approvals": "Approvals",
+        "sending": "Sending and customer acceptance",
+        "customer-accounts": "Customer account page",
+        "quote-requests": "Quote requests from the store",
+        "troubleshooting": "Troubleshooting"
+      }
+    },
+    "support": {
+      "title": "Contact support",
+      "help": "Email {{email}}. We answer within one business day. Add the quote number and what you expected to happen. Never send passwords or payment details.",
+      "code": "Support code: {{code}}",
+      "button": "Contact support",
+      "subject": "Vendora support ({{code}})",
+      "body": "Support code: {{code}}\n\nQuote number:\nWhat happened:\nWhat I expected:\n"
+    },
+    "links": {
+      "troubleshooting": "What do these messages mean?",
+      "csv": "CSV format and examples"
     }
   },
   "team": { "errors": { "lastOwner": "There must be at least one owner." } },
