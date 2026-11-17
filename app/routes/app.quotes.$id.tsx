@@ -264,7 +264,12 @@ export default function QuoteDetail() {
   const busy = fetcher.state !== "idle" ? { loading: true } : {};
   const submit = (intent: string, fields: Record<string, string> = {}) =>
     fetcher.submit({ intent, ...fields }, { method: "post" });
-  usePollWhile(quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING");
+  const syncing = quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING";
+  // After a successful Send, the invoice job runs after the sync: keep polling until SENT or a problem shows.
+  const sendAccepted = fetcher.state === "idle" && fetcher.data?.ok === true && fetcher.data.data.intent === "send";
+  const sending =
+    sendAccepted && quote.status === "APPROVED" && quote.attention.length === 0 && !["FAILED", "NEEDS_ATTENTION"].includes(quote.syncStatus);
+  usePollWhile(syncing || sending);
 
   const [pdfState, setPdfState] = useState<"idle" | "loading" | "failed">("idle");
   const downloadPdf = useCallback(
@@ -345,7 +350,7 @@ export default function QuoteDetail() {
         <ApprovalSection approval={data.approval} onDecide={submit} busy={fetcher.state !== "idle"} />
       )}
       {quote.status === "APPROVED" && perms.send && (
-        <SendSection onSend={(message) => submit("send", { message })} busy={fetcher.state !== "idle"} syncing={quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING"} />
+        <SendSection onSend={(message) => submit("send", { message })} busy={fetcher.state !== "idle" || sending} syncing={syncing} />
       )}
       <ShopifySection data={data} onRetry={() => submit("retrySync")} busy={fetcher.state !== "idle"} />
       <VersionsSection versions={data.versions} onPdf={downloadPdf} />
