@@ -143,7 +143,19 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       author: staffName(item.createdByUserId),
       total: money(item.total),
       locked: !!item.lockedAt,
-      changes: index === 0 ? [] : diffVersions(versions[index - 1], item),
+      changes: (index === 0 ? [] : diffVersions(versions[index - 1], item)).map((change) => ({
+        ...change,
+        before: change.before && {
+          ...change.before,
+          unitPrice: money(D(change.before.unitPrice)),
+          lineTotal: money(D(change.before.lineTotal)),
+        },
+        after: change.after && {
+          ...change.after,
+          unitPrice: money(D(change.after.unitPrice)),
+          lineTotal: money(D(change.after.lineTotal)),
+        },
+      })),
     })),
     history: events.map((event) => ({
       id: event.id,
@@ -264,7 +276,12 @@ export default function QuoteDetail() {
   const busy = fetcher.state !== "idle" ? { loading: true } : {};
   const submit = (intent: string, fields: Record<string, string> = {}) =>
     fetcher.submit({ intent, ...fields }, { method: "post" });
-  usePollWhile(quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING");
+  const syncing = quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING";
+  // After a successful Send, the invoice job runs after the sync: keep polling until SENT or a problem shows.
+  const sendAccepted = fetcher.state === "idle" && fetcher.data?.ok === true && fetcher.data.data.intent === "send";
+  const sending =
+    sendAccepted && quote.status === "APPROVED" && quote.attention.length === 0 && !["FAILED", "NEEDS_ATTENTION"].includes(quote.syncStatus);
+  usePollWhile(syncing || sending);
 
   const [pdfState, setPdfState] = useState<"idle" | "loading" | "failed">("idle");
   const downloadPdf = useCallback(
@@ -345,7 +362,7 @@ export default function QuoteDetail() {
         <ApprovalSection approval={data.approval} onDecide={submit} busy={fetcher.state !== "idle"} />
       )}
       {quote.status === "APPROVED" && perms.send && (
-        <SendSection onSend={(message) => submit("send", { message })} busy={fetcher.state !== "idle"} syncing={quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING"} />
+        <SendSection onSend={(message) => submit("send", { message })} busy={fetcher.state !== "idle" || sending} syncing={syncing} />
       )}
       <ShopifySection data={data} onRetry={() => submit("retrySync")} busy={fetcher.state !== "idle"} />
       <VersionsSection versions={data.versions} onPdf={downloadPdf} />
@@ -440,6 +457,9 @@ function ProblemsBanner({
           <s-list-item key={message}>{message}</s-list-item>
         ))}
       </s-unordered-list>
+      <s-link href="/help#troubleshooting" target="_blank">
+        {t("help.links.troubleshooting")}
+      </s-link>
     </s-banner>
   );
 }
@@ -898,12 +918,9 @@ function VersionsSection({
                     <s-list-item key={change.variantId}>
                       {t(`quote.versions.${change.change}`, {
                         title: change.title,
-                        beforeQty: change.before?.quantity ?? "",
                         afterQty: change.after?.quantity ?? "",
-                        beforePrice: change.before?.unitPrice ?? "",
                         afterPrice: change.after?.unitPrice ?? "",
-                        beforeDiscount: change.before?.discountPct ?? "0",
-                        afterDiscount: change.after?.discountPct ?? "0",
+                        changes: changedFields(change, t),
                       })}
                     </s-list-item>
                   ))}
@@ -915,6 +932,22 @@ function VersionsSection({
     </s-section>
   );
 }
+
+// Only the fields that differ, e.g. "quantity 1 → 20, discount 0 % → 8 %".
+type VersionChange = LoaderData["versions"][number]["changes"][number];
+const changedFields = (change: VersionChange, t: (key: string, values: Record<string, string | number>) => string) => {
+  const { before, after } = change;
+  if (!before || !after) return "";
+  const parts: string[] = [];
+  if (before.quantity !== after.quantity) parts.push(t("quote.versions.quantity", { before: before.quantity, after: after.quantity }));
+  if (before.unitPrice !== after.unitPrice) parts.push(t("quote.versions.price", { before: before.unitPrice, after: after.unitPrice }));
+  const beforeDiscount = before.discountPct ?? "0";
+  const afterDiscount = after.discountPct ?? "0";
+  if (beforeDiscount !== afterDiscount) parts.push(t("quote.versions.discount", { before: beforeDiscount, after: afterDiscount }));
+  // e.g. only the quote discount changed: show the line total instead of an empty list.
+  if (parts.length === 0) parts.push(t("quote.versions.lineTotal", { before: before.lineTotal, after: after.lineTotal }));
+  return parts.join(", ");
+};
 
 function HistorySection({ history }: { history: LoaderData["history"] }) {
   const { t } = useTranslation();

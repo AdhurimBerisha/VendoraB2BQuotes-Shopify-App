@@ -60,6 +60,7 @@ function Nav({ showJobs }: { showJobs: boolean }) {
       <s-link href="/app/quotes">{t("nav.quotes")}</s-link>
       {showJobs && <s-link href="/app/jobs">{t("nav.jobs")}</s-link>}
       <s-link href="/app/settings">{t("nav.settings")}</s-link>
+      <s-link href="/app/help">{t("nav.help")}</s-link>
     </s-app-nav>
   );
 }

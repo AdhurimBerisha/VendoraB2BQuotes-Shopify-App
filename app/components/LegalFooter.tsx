@@ -5,6 +5,7 @@ import styles from "./legal.module.css";
 const LegalFooter = () => (
   <footer className={styles.footer}>
     <Link to="/">Vendora</Link>
+    <Link to="/help">Help</Link>
     <Link to="/privacy">Privacy policy</Link>
     <Link to="/terms">Terms of service</Link>
     <Link to="/dpa">Data processing agreement</Link>

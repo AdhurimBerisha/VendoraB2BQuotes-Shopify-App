@@ -139,6 +139,9 @@ export default function ImportPage() {
                 {t("import.upload.template")}
               </s-button>
             </s-stack>
+            <s-link href="/help#csv" target="_blank">
+              {t("help.links.csv")}
+            </s-link>
           </s-stack>
         </s-section>
       )}

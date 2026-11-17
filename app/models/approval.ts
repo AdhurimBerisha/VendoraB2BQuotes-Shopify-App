@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Money } from "../lib/money";
+import { D, type Money, formatMoney } from "../lib/money";
 
 // Pure approval rules: which reasons (if any) make a submitted quote need a manager.
 
@@ -52,7 +52,8 @@ const approvalReasons = (
   if (maxTotal === undefined) {
     reasons.push({ code: "NO_THRESHOLD_FOR_CURRENCY", detail: currency });
   } else if (totals.total.gt(maxTotal)) {
-    reasons.push({ code: "TOTAL_OVER", detail: `${totals.total.toFixed(2)} > ${maxTotal} ${currency}` });
+    // e.g. "$24,881.00 > $10,000.00": shown on the quote page and in the approval email.
+    reasons.push({ code: "TOTAL_OVER", detail: `${formatMoney(totals.total, currency)} > ${formatMoney(D(maxTotal), currency)}` });
   }
   return reasons;
 };
