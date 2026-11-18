@@ -9,7 +9,7 @@ export default function Privacy() {
   return (
     <main className={styles.legal}>
       <h1>Privacy policy</h1>
-      <p>Last updated: 16 November 2026</p>
+      <p>Last updated: 18 November 2026</p>
 
       <h2>Who we are</h2>
       <p>
@@ -116,7 +116,7 @@ export default function Privacy() {
             <td>Germany (EU)</td>
           </tr>
           <tr>
-            <td>Resend</td>
+            <td>Google (Gmail)</td>
             <td>Notification emails to merchant staff</td>
             <td>United States</td>
           </tr>

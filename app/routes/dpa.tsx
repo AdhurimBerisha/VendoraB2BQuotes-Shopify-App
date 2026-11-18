@@ -9,7 +9,7 @@ export default function Dpa() {
   return (
     <main className={styles.legal}>
       <h1>Data processing agreement</h1>
-      <p>Last updated: 16 November 2026</p>
+      <p>Last updated: 18 November 2026</p>
 
       <p>
         This agreement is part of the <a href="/terms">terms of service</a> between the merchant who installs
@@ -97,7 +97,7 @@ export default function Dpa() {
             <td>Germany (EU)</td>
           </tr>
           <tr>
-            <td>Resend</td>
+            <td>Google (Gmail)</td>
             <td>Notification emails to your staff (not to buyers)</td>
             <td>United States</td>
           </tr>

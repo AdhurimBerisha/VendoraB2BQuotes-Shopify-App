@@ -15,7 +15,7 @@ Built on the Shopify React Router app template: React Router 7, Prisma on Postgr
 
 1. `npm install`
 2. `npm run db:up` starts PostgreSQL 16 on port 5432 with two databases: `vendora` and `vendora_test`.
-3. Create `.env` and `.env.test` (see [Environment](#environment)).
+3. `cp .env.example .env` and fill in `APP_SIGNING_SECRET`; create `.env.test` from the test block at the end of `.env.example` (see [Environment](#environment)).
 4. `npm run dev` applies pending migrations and starts the app through the Shopify CLI. Press `p` to open it and install it on the dev store.
 
 ## Environment
