@@ -9,7 +9,24 @@ Built on the Shopify React Router app template: React Router 7, Prisma on Postgr
 - Node 22.12 or newer
 - Docker Desktop (PostgreSQL runs in a container)
 - [Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started)
-- Access to the Vendora app in the Shopify Dev Dashboard, and a dev store with B2B (companies)
+- A Shopify app in the [Dev Dashboard](https://dev.shopify.com/dashboard) and a dev store with B2B (companies). To try Vendora on your own, see [Run your own copy](#run-your-own-copy)
+
+## Run your own copy
+
+You can clone this repository and run Vendora with your own free Shopify developer account. Nothing here connects to the maintainer's apps or servers. Suggestions are welcome as GitHub issues; changes to this repository are made by the maintainer.
+
+1. **Accounts:** a free Shopify developer account ([dev.shopify.com](https://dev.shopify.com/dashboard)) and, in it, a **dev store with B2B** (a Shopify Plus dev store, so Customers → Companies exists).
+2. **Your own app:** Dev Dashboard → *Create app* (any name) → copy its **client id**.
+3. **App config:** `cp shopify.app.dev.toml shopify.app.local.toml`, then in the new file set `client_id` to your client id and `name` to your app's name. Leave the rest as it is (scopes, webhooks, app proxy). Run `shopify app config use local`. The file is gitignored.
+4. **Protected customer data:** Dev Dashboard → your app → *API access requests* → *Protected customer data*: select a reason (*App functionality*) for the data and for Name, Email, Phone and Address, then save. Without it `shopify app dev` stops with "not approved to subscribe to webhook topics containing protected customer data".
+5. **Local setup:** the [Setup](#setup) steps below. `npm run dev` asks for your dev store, creates the tunnel and installs the app there; press `p` to open it. The setup wizard takes you through the first quote.
+6. **Sample data (optional):** if the store has no companies yet, `npx shopify store auth --store <shop>.myshopify.com --scopes write_products,write_customers`, then `node scripts/seed-store.mjs <shop>.myshopify.com`.
+
+Good to know:
+- **Emails** are skipped until you set a sender in `.env` (see [Environment](#environment)).
+- **Error reporting** is off in your copy. `app/lib/sentry.ts` holds the maintainer's Sentry project; put your own DSN there before setting `SENTRY_ENVIRONMENT`.
+- **Customer account "Quotes" page:** the extension finds its server by app client id (`BACKENDS` in `extensions/vendora-customer-quotes/src/QuotesPage.tsx`). Add your client id with the tunnel URL that `npm run dev` prints to try that page; everything else works without it.
+- `npm run deploy` and `npm run deploy:staging` target the maintainer's apps; don't run them.
 
 ## Setup
 
@@ -51,7 +68,7 @@ A hosted environment sets all of the above, plus:
 
 | Variable | Notes |
 |---|---|
-| `SENTRY_ENVIRONMENT` | for example `staging`; defaults to `NODE_ENV` |
+| `SENTRY_ENVIRONMENT` | for example `staging`; turns on Sentry. Without it Sentry runs only in a production build (as `production`) |
 | `SENTRY_AUTH_TOKEN` | build time only: uploads source maps to Sentry |
 | `LOG_LEVEL` | optional, default `info` |
 | `RUN_WORKERS` | optional; `false` stops this instance from running background jobs |
@@ -97,4 +114,8 @@ Every push to `staging` or `main` and every pull request runs `.github/workflows
 
 - The `staging` branch deploys to the staging host on push (Docker image, health check on `/healthz`).
 - `npm run deploy:staging` pushes the Shopify app config and extensions for the staging app; `npm run deploy` does the same for the production app.
-- Production hosting is not set up yet.
+- The `main` branch deploys to the production host on push.
+
+## License
+
+[MIT](LICENSE). You may use, change and share the code, also in your own projects, as long as the copyright notice stays.
