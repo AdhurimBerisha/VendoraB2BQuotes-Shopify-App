@@ -83,6 +83,7 @@ test("refused for this email (bad field, testing sender to someone else): droppe
 test("no API key: skipped with a warning", async () => {
   vi.stubEnv("RESEND_API_KEY", "");
   vi.stubEnv("SMTP_URL", "");
+  vi.stubEnv("GMAIL_REFRESH_TOKEN", "");
   const fetchMock = vi.fn();
   await runSendEmail(job(), { fetchImpl: fetchMock as unknown as typeof fetch });
   expect(fetchMock).not.toHaveBeenCalled();
@@ -99,6 +100,7 @@ test("uninstalled shop: skipped", async () => {
 
 const withSmtp = () => {
   vi.stubEnv("RESEND_API_KEY", "");
+  vi.stubEnv("GMAIL_REFRESH_TOKEN", "");
   vi.stubEnv("SMTP_URL", "smtps://me%40gmail.test:pw@smtp.gmail.test:465");
   vi.stubEnv("EMAIL_FROM", "Vendora <me@gmail.test>");
 };
@@ -129,4 +131,63 @@ test("SMTP: a refused address is dropped, an outage or bad password is retried",
     const sendMail = vi.fn(async () => Promise.reject(smtpError(code)));
     await expect(runSendEmail(job(), { sendMail })).rejects.toThrow(`SMTP ${code}`);
   }
+});
+
+// Each test gets its own refresh token so the per-process access-token cache doesn't leak between them.
+let gmailRun = 0;
+const withGmail = () => {
+  vi.stubEnv("RESEND_API_KEY", "");
+  vi.stubEnv("GMAIL_CLIENT_ID", "cid");
+  vi.stubEnv("GMAIL_CLIENT_SECRET", "secret");
+  vi.stubEnv("GMAIL_REFRESH_TOKEN", `rt-${(gmailRun += 1)}`);
+  vi.stubEnv("EMAIL_FROM", "Vendora <me@gmail.test>");
+};
+
+const gmailFetch = (send: Response) =>
+  vi.fn(async (url: string) =>
+    url === "https://oauth2.googleapis.com/token"
+      ? Response.json({ access_token: "at-1", expires_in: 3599 })
+      : send.clone(),
+  );
+
+test("Gmail: without a Resend key the email is sent as a raw MIME message through the Gmail API", async () => {
+  withGmail();
+  const fetchMock = gmailFetch(Response.json({ id: "g-1" }));
+  const sendMail = vi.fn();
+
+  await runSendEmail(job(), { fetchImpl: fetchMock as unknown as typeof fetch, sendMail });
+
+  expect(sendMail).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  const [tokenUrl, tokenInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(tokenUrl).toBe("https://oauth2.googleapis.com/token");
+  expect(String(tokenInit.body)).toContain("grant_type=refresh_token");
+  const [sendUrl, sendInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+  expect(sendUrl).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
+  expect(sendInit.headers).toMatchObject({ Authorization: "Bearer at-1" });
+  const raw = Buffer.from(JSON.parse(String(sendInit.body)).raw, "base64url").toString();
+  expect(raw).toContain("To: rep@shop.test");
+  expect(raw).toContain("Subject: Approved: Q-1001");
+
+  // Second email in the same process reuses the access token.
+  await runSendEmail(job(), { fetchImpl: fetchMock as unknown as typeof fetch });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test("Gmail: an invalid message is dropped; token, quota and outage errors are retried", async () => {
+  withGmail();
+  const bad = gmailFetch(Response.json({ error: { message: "Invalid To header" } }, { status: 400 }));
+  await expect(runSendEmail(job(), { fetchImpl: bad as unknown as typeof fetch })).resolves.toBeUndefined();
+
+  for (const status of [401, 403, 429, 500]) {
+    withGmail();
+    const failing = gmailFetch(Response.json({ error: { message: "x" } }, { status }));
+    await expect(runSendEmail(job(), { fetchImpl: failing as unknown as typeof fetch })).rejects.toThrow(
+      `Gmail responded ${status}`,
+    );
+  }
+
+  withGmail();
+  const revoked = vi.fn(async () => Response.json({ error: "invalid_grant" }, { status: 400 }));
+  await expect(runSendEmail(job(), { fetchImpl: revoked as unknown as typeof fetch })).rejects.toThrow("invalid_grant");
 });
