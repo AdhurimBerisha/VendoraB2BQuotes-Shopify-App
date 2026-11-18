@@ -27,8 +27,16 @@ Built on the Shopify React Router app template: React Router 7, Prisma on Postgr
 | `DATABASE_URL` | `postgresql://vendora:vendora@localhost:5432/vendora?schema=public` | |
 | `APP_SIGNING_SECRET` | any long random string | signs customer quote links; `APP_SIGNING_SECRET_OLD` keeps old links valid during a rotation |
 | `RESEND_API_KEY` | optional | sends notification emails through Resend (needs an own, verified domain) |
-| `SMTP_URL` | optional | used when `RESEND_API_KEY` is empty, e.g. Gmail with an app password: `smtps://you%40gmail.com:apppassword@smtp.gmail.com:465` |
-| `EMAIL_FROM` | optional | sender address; with Gmail it must be that Gmail address. Without it and one of the two above, notification emails are not sent |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | optional | used when `RESEND_API_KEY` is empty: sends through the Gmail API over HTTPS (works on hosts that block SMTP, like Render free). Setup below |
+| `SMTP_URL` | optional | used when `RESEND_API_KEY` and the `GMAIL_*` trio are empty, e.g. Gmail with an app password: `smtps://you%40gmail.com:apppassword@smtp.gmail.com:465` |
+| `EMAIL_FROM` | optional | sender address; with Gmail it must be that Gmail address. Without it and one of the senders above, notification emails are not sent |
+
+**Gmail API setup (free, once):**
+1. [Google Cloud console](https://console.cloud.google.com/) → new project → *APIs & Services* → enable **Gmail API**.
+2. *OAuth consent screen*: External, add your Gmail as a test user, then **Publish app** (In production). While it stays in *Testing*, the refresh token dies after 7 days. Google's "unverified app" warning on step 4 is fine; only you sign in.
+3. *Credentials* → Create OAuth client ID → **Web application**, redirect URI `https://developers.google.com/oauthplayground`. Copy the client id and secret.
+4. [OAuth Playground](https://developers.google.com/oauthplayground) → gear icon → *Use your own OAuth credentials* (paste them) → scope `https://www.googleapis.com/auth/gmail.send` → Authorize (sign in with the sending Gmail) → *Exchange authorization code for tokens* → copy the **refresh token**.
+5. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` and `EMAIL_FROM` (`Vendora <you@gmail.com>`) on the host. Leave `RESEND_API_KEY` empty.
 
 `.env.test`, used by `npm test`. The database name must end in `_test`; the tests refuse to run otherwise.
 
