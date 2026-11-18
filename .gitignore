@@ -13,6 +13,8 @@ node_modules
 .env
 .env.*
 !.env.example
+# Your own app config when running a copy (README → Run your own copy).
+shopify.app.local.toml
 
 /graphify-out
 

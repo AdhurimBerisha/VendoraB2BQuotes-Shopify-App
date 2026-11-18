@@ -26,14 +26,11 @@ Vendora can be installed on development stores that belong to Adhurim's Shopify 
 2. Accept the staff invitation in your email and sign in to the store's admin.
 3. Open **Apps → Vendora** in the left menu.
 
-A development store you created in your own Shopify Partner account can't install Vendora this way. Ask Adhurim to make the store for you instead.
+A development store you created in your own Shopify Partner account can't install the hosted Vendora. To try it there, run your own copy instead: see **Run your own copy** in the [README](../README.md#run-your-own-copy).
 
 ### Your real store
 
-1. Send Adhurim your store's address. It ends in `.myshopify.com`; you'll find it in Shopify admin → Settings → Domains.
-2. Adhurim sends you a private **install link**. It works for your store only (or for all stores of your Shopify Plus organization, if you ask for that).
-3. Sign in to your Shopify admin, then open the link.
-4. Shopify shows what Vendora may access (products, customers, draft orders, inventory, orders). Press **Install**.
+The hosted Vendora is not on the Shopify App Store, so it can't be installed on real (paid) stores.
 
 Your quotes and settings are stored on Adhurim's Vendora server. What is stored and why is in the privacy policy, linked at the bottom of the app's help pages.
 
