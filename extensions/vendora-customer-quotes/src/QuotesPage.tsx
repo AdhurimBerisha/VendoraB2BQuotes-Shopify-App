@@ -30,6 +30,7 @@ type CustomerQuote = {
   expiresAt: string | null;
   invoiceUrl: string | null;
   pdfUrl: string | null;
+  poNumber: string | null;
 };
 type QuoteAction = "decline" | "changes";
 
@@ -75,6 +76,38 @@ const ReasonModal = (props: {
         {props.submit}
       </s-button>
     </s-modal>
+  );
+};
+
+// M9.3: the buyer's PO number, saved before they accept (it goes on the Shopify order).
+const PoNumberField = (props: { quoteId: string; poNumber: string | null; onSaved: () => void }) => {
+  const { translate: t } = shopify.i18n;
+  const [value, setValue] = useState(props.poNumber ?? "");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api(`/api/customer/quotes/${props.quoteId}`, { method: "POST", body: JSON.stringify({ action: "po", poNumber: value.trim() }) });
+      shopify.toast.show(t("poSaved"));
+      props.onSaved();
+    } catch (error) {
+      console.error("Vendora PO number failed", error);
+      shopify.toast.show(t("actionError"));
+    }
+    setSaving(false);
+  };
+  return (
+    <s-stack direction="inline" gap="base" alignItems="end">
+      <s-text-field
+        label={t("poNumber")}
+        value={value}
+        maxLength={100}
+        onInput={(event: Event) => setValue((event.currentTarget as HTMLInputElement).value)}
+      ></s-text-field>
+      <s-button variant="secondary" loading={saving} disabled={value.trim() === (props.poNumber ?? "")} onClick={save}>
+        {t("savePoNumber")}
+      </s-button>
+    </s-stack>
   );
 };
 
@@ -127,6 +160,7 @@ const QuotesPage = () => {
                 <s-text>{t("validUntil", { date: formatDate(new Date(quote.expiresAt)) })}</s-text>
               )}
             </s-stack>
+            {quote.status === "SENT" && <PoNumberField quoteId={quote.id} poNumber={quote.poNumber} onSaved={load} />}
             <s-button-group>
               {quote.status === "SENT" && quote.invoiceUrl && (
                 <s-button slot="primary-action" variant="primary" href={quote.invoiceUrl}>

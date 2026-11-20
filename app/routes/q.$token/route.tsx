@@ -1,9 +1,10 @@
-import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
-import { data, isRouteErrorResponse, useLoaderData, useRouteError } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { data, isRouteErrorResponse, redirect, useLoaderData, useRouteError } from "react-router";
+import { UserError } from "../../lib/errors";
 import { localDateString } from "../../lib/dates";
 import { createI18n } from "../../lib/i18n";
 import { formatMoney } from "../../lib/money";
-import { PUBLIC_HEADERS, findPublicQuote, recordView } from "../../models/public-quote.server";
+import { PUBLIC_HEADERS, acceptPublicQuote, findPublicQuote, recordView } from "../../models/public-quote.server";
 import styles from "./styles.module.css";
 
 // ponytail: English only until a second language exists; then the contact's locale.
@@ -42,10 +43,25 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         pdfUrl: `/q/${token}/pdf`,
         // Shopify's checkout link, only while the quote is waiting for the buyer.
         invoiceUrl: quote.status === "SENT" ? quote.invoiceUrl : null,
+        poNumber: quote.poNumber ?? "",
       },
     },
     { headers: PUBLIC_HEADERS },
   );
+};
+
+// M9.3: the accept form posts the PO number here, then the buyer goes on to Shopify's checkout.
+export const action = async ({ request, params }: ActionFunctionArgs) => {
+  const form = await request.formData();
+  const poNumber = String(form.get("poNumber") ?? "");
+  try {
+    const to = await acceptPublicQuote(request, params.token ?? "", poNumber);
+    return redirect(to, { headers: PUBLIC_HEADERS });
+  } catch (error) {
+    // Too long (the field has maxLength) or the quote just closed: nothing useful to show but an error.
+    if (error instanceof UserError) throw new Response("Bad request", { status: 400, headers: PUBLIC_HEADERS });
+    throw error;
+  }
 };
 
 // errorHeaders: a thrown 404/429 (with PUBLIC_HEADERS) renders this route's ErrorBoundary; keep its headers.
@@ -130,12 +146,16 @@ export default function PublicQuote() {
               <a href={quote.pdfUrl} download>
                 {t("publicQuote.downloadPdf")}
               </a>
-              {quote.invoiceUrl && (
-                <a className={styles.primary} href={quote.invoiceUrl} rel="noreferrer">
-                  {t("publicQuote.accept")}
-                </a>
-              )}
             </p>
+            {quote.invoiceUrl && (
+              <form method="post" className={styles.accept}>
+                <label htmlFor="po-number">{t("publicQuote.poNumber")}</label>
+                <input id="po-number" name="poNumber" maxLength={100} defaultValue={quote.poNumber} autoComplete="off" />
+                <button className={styles.primary} type="submit">
+                  {t("publicQuote.accept")}
+                </button>
+              </form>
+            )}
           </>
         )}
       </main>

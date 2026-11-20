@@ -115,8 +115,13 @@ test("a rep can't resolve; another shop's quote is not found", async () => {
   }
 });
 
-test("parseLinesKey ignores anything that isn't a variant with a positive quantity", () => {
-  expect(parseLinesKey("gid://shopify/ProductVariant/1:2|bad|gid://shopify/Product/3:1|gid://shopify/ProductVariant/4:0")).toEqual([
-    { variantId: "gid://shopify/ProductVariant/1", quantity: 2 },
+test("parseLinesKey keeps variants and custom lines with a positive quantity", () => {
+  expect(
+    parseLinesKey(
+      "gid://shopify/ProductVariant/1:2|bad|gid://shopify/Product/3:1|gid://shopify/ProductVariant/4:0|custom:Freight%3A%20EU:1",
+    ),
+  ).toEqual([
+    { key: "gid://shopify/ProductVariant/1", quantity: 2 },
+    { key: "custom:Freight%3A%20EU", quantity: 1 },
   ]);
 });

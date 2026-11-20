@@ -58,6 +58,7 @@ model Quote {
   invoiceUrl           String? // Shopify checkout link of the sent draft order (public quote page, M3.2)
   shopifyUpdatedAt     DateTime?
   orderId              String?
+  poNumber             String? // the buyer's purchase-order number (M9.3), also on the draft order
   attention            Json?
   lockVersion          Int            @default(0) // optimistic lock for edits
   createdAt            DateTime       @default(now())
@@ -97,12 +98,12 @@ model QuoteLine {
   versionId     String
   version       QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   position      Int
-  variantId     String
-  productId     String
+  variantId     String? // null = custom line (freight, fee, service; M9.2): title + price entered by staff
+  productId     String?
   sku           String?
   titleSnapshot String
   quantity      Int
-  catalogPrice  Decimal      @db.Decimal(14, 4)
+  catalogPrice  Decimal      @db.Decimal(14, 4) // custom line: the price staff entered
   overridePrice Decimal?     @db.Decimal(14, 4)
   discountPct   Decimal?     @db.Decimal(7, 4)
   lineTotal     Decimal      @db.Decimal(14, 4)

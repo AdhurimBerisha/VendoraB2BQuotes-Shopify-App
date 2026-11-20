@@ -48,6 +48,7 @@ const loadQuotePdfData = async (
     version: version.versionNumber,
     issuedAt: localDateString(version.lockedAt ?? version.createdAt, settings.timezone),
     expiresAt: quote.expiresAt ? localDateString(quote.expiresAt, settings.timezone) : null,
+    poNumber: quote.poNumber,
     shopName: info.name,
     // Checked again here: a stored value from before the check, or written another way, isn't fetched.
     logoUrl: settings.logoUrl && isAllowedLogoUrl(settings.logoUrl) ? settings.logoUrl : null,

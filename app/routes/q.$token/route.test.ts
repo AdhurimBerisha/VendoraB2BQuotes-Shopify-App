@@ -4,7 +4,7 @@ import db from "../../db.server";
 import { signQuoteToken } from "../../lib/signed-token.server";
 import { redactShop } from "../../models/privacy.server";
 import { testQuote, testShop } from "../../test/factories";
-import { loader } from "./route";
+import { action, loader } from "./route";
 
 let SHOP_A: string;
 let SHOP_B: string;
@@ -54,8 +54,41 @@ test("valid token: lines shown, viewed logged once per day", async () => {
   expect(result.data.superseded).toBe(false);
   expect(result.data.quote?.lines).toHaveLength(2);
   expect(result.data.quote?.invoiceUrl).toBe("https://shop.test/invoice");
-  expect(result.init?.headers).toMatchObject({ "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer" });
+  expect(result.init?.headers).toMatchObject({ "X-Robots-Tag": "noindex", "Referrer-Policy": "same-origin" });
   expect(await views(SHOP_A, quote.id)).toBe(1);
+});
+
+const accept = (token: string, poNumber: string) =>
+  action({
+    request: new Request(`https://vendora.test/q/${token}`, {
+      method: "POST",
+      headers: { "x-forwarded-for": randomUUID(), "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ poNumber }),
+    }),
+    params: { token },
+    context: {},
+  } as unknown as Parameters<typeof action>[0]);
+
+test("M9.3: accept saves the PO number and goes to checkout; a closed quote goes back to the page", async () => {
+  const quote = await testQuote(SHOP_A, { overrides: { status: "SENT", invoiceUrl: "https://shop.test/invoice" } });
+  const token = tokenFor(SHOP_A, quote.id);
+
+  const response = await accept(token, "  PO-4711 ");
+
+  expect(response.status).toBe(302);
+  expect(response.headers.get("Location")).toBe("https://shop.test/invoice");
+  expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).poNumber).toBe("PO-4711");
+  expect(await db.auditEvent.count({ where: { shop: SHOP_A, quoteId: quote.id, action: "quote.po_number_set" } })).toBe(1);
+  expect((await get(token)).data.quote?.poNumber).toBe("PO-4711");
+
+  // Same number again: nothing to save.
+  await accept(token, "PO-4711");
+  expect(await db.auditEvent.count({ where: { shop: SHOP_A, quoteId: quote.id, action: "quote.po_number_set" } })).toBe(1);
+
+  await db.quote.update({ where: { id: quote.id }, data: { status: "ORDERED" } });
+  const closed = await accept(token, "PO-9");
+  expect(closed.headers.get("Location")).toBe(`/q/${token}`);
+  expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).poNumber).toBe("PO-4711");
 });
 
 test("no checkout link unless the quote is SENT", async () => {

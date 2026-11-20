@@ -9,25 +9,32 @@ import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { type QuoteStatus, TRANSITIONS, cancelQuote } from "./quote.server";
 import { requestSync, sendQuote } from "./sync.server";
-import { reviseQuote, saveDraftLines } from "./version.server";
+import { lineKey } from "./pricing";
+import { type DraftLineInput, reviseQuote, saveDraftLines, toLineInput } from "./version.server";
 
 // Separate from attention.server.ts: sync.server imports that file, and these actions call sync.
 
 const isRevisable = (status: string) => (TRANSITIONS.revise as readonly string[]).includes(status as QuoteStatus);
 
-// "gid://shopify/ProductVariant/1:2|…" (linesKey in webhooks.server.ts) → lines.
+// "gid://shopify/ProductVariant/1:2|custom:Freight:1|…" (linesKey in pricing.ts) → line keys.
 const parseLinesKey = (key: string) =>
   key
     .split("|")
     .filter(Boolean)
     .map((part) => {
       const at = part.lastIndexOf(":");
-      return { variantId: part.slice(0, at), quantity: Number(part.slice(at + 1)) };
+      return { key: part.slice(0, at), quantity: Number(part.slice(at + 1)) };
     })
-    .filter((line) => line.variantId.startsWith("gid://shopify/ProductVariant/") && Number.isInteger(line.quantity) && line.quantity > 0);
+    .filter(
+      (line) =>
+        (line.key.startsWith("gid://shopify/ProductVariant/") || line.key.startsWith("custom:")) &&
+        Number.isInteger(line.quantity) &&
+        line.quantity > 0,
+    );
 
 // CHANGED_IN_SHOPIFY → "Keep Shopify's version": a new version with the draft order's lines,
-// keeping our overrides and discounts where the variant is still there. Needs approval again.
+// keeping our overrides and discounts where the line is still there. Custom lines are kept only if
+// we sent them (we know their price); a custom item added in Shopify is left out. Needs approval again.
 const acceptShopifyLines = async (actor: StaffActor, quoteId: string, theirs: string) => {
   const lines = parseLinesKey(theirs);
   if (lines.length === 0) throw new UserError("attention.errors.noLines");
@@ -36,18 +43,15 @@ const acceptShopifyLines = async (actor: StaffActor, quoteId: string, theirs: st
     where: { id: quoteId, shop: actor.shop },
     include: { currentVersion: { include: { lines: true } } },
   });
-  const previous = new Map((quote.currentVersion?.lines ?? []).map((line) => [line.variantId, line]));
-  await saveDraftLines(
-    actor,
-    quoteId,
-    quote.lockVersion,
-    lines.map((line) => ({
-      ...line,
-      overridePrice: previous.get(line.variantId)?.overridePrice ?? null,
-      discountPct: previous.get(line.variantId)?.discountPct ?? null,
-    })),
-    quote.currentVersion?.quoteDiscountPct ?? null,
+  const previous = new Map(
+    (quote.currentVersion?.lines ?? []).map((line) => [lineKey(line.variantId, line.titleSnapshot), line]),
   );
+  const input = lines.flatMap(({ key, quantity }): DraftLineInput[] => {
+    const before = previous.get(key);
+    if (key.startsWith("custom:")) return before ? [{ ...toLineInput(before), quantity }] : [];
+    return [{ variantId: key, quantity, overridePrice: before?.overridePrice ?? null, discountPct: before?.discountPct ?? null }];
+  });
+  await saveDraftLines(actor, quoteId, quote.lockVersion, input, quote.currentVersion?.quoteDiscountPct ?? null);
 };
 
 // Runs the chosen action, then removes the item and records who resolved it. Each action also

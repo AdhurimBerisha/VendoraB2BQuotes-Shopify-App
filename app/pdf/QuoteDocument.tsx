@@ -67,6 +67,7 @@ const QuoteDocument = ({ q }: { q: QuotePdfData }) => {
               {t("pdf.version", { version: q.version })} · {t("pdf.issued", { date: q.issuedAt })}
             </Text>
             {q.expiresAt && <Text style={styles.muted}>{t("pdf.validUntil", { date: q.expiresAt })}</Text>}
+            {q.poNumber && <Text style={styles.muted}>{t("pdf.poNumber", { po: q.poNumber })}</Text>}
           </View>
         </View>
 

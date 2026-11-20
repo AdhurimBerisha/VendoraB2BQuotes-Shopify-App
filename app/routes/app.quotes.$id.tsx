@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useCallback, useEffect, useState } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -21,12 +21,12 @@ import { resolveAttention } from "../models/attention-actions.server";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
 import { BLOCKING, type LineProblem } from "../models/pricing";
-import { cancelQuote, getQuote, quoteLabel, setExpiry } from "../models/quote.server";
+import { cancelQuote, getQuote, quoteLabel, setExpiry, setPoNumber } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
 import { logger } from "../lib/logger.server";
-import { diffVersions, reviseQuote, saveDraftLines } from "../models/version.server";
+import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "../models/version.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import { getDraftOrderSummary } from "../shopify/draft-orders.server";
 
@@ -86,6 +86,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       rep: staffName(quote.assignedToUserId),
       expires: quote.expiresAt ? when(quote.expiresAt) : null,
       expiresOn: quote.expiresAt ? localDateString(quote.expiresAt, timezone) : "",
+      poNumber: quote.poNumber ?? "",
       today: localDateString(new Date(), timezone),
       draftOrderNumericId: quote.draftOrderId?.split("/").pop() ?? null,
       orderNumericId: quote.orderId?.split("/").pop() ?? null,
@@ -99,12 +100,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       discountTotal: money(version.discountTotal),
       total: money(version.total),
       lines: version.lines.map((line) => ({
+        key: line.id,
         variantId: line.variantId,
+        custom: line.variantId === null,
         title: line.titleSnapshot,
         sku: line.sku ?? "",
         quantity: line.quantity,
-        catalogPrice: money(line.catalogPrice),
-        overridePrice: percentText(line.overridePrice),
+        catalogPrice: line.variantId === null ? "" : money(line.catalogPrice),
+        // A custom line's price is edited in the "Your price" column (stored as its catalog price).
+        overridePrice: percentText(line.variantId === null ? line.catalogPrice : line.overridePrice),
         discountPct: percentText(line.discountPct),
         lineTotal: money(line.lineTotal),
         problems: problemsOf(line.problems),
@@ -165,6 +169,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       actor: event.actorType === "STAFF" ? staffName(event.actorId) : null,
     })),
     perms: {
+      create: can(actor, "quote.create"),
       edit: can(actor, "quote.edit"),
       submit: can(actor, "quote.submit"),
       approve: can(actor, "quote.approve"),
@@ -173,6 +178,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       import: can(actor, "import.run"),
       retry: can(actor, "attention.resolve"),
       setExpiry: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
+      setPoNumber: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
     },
   };
 };
@@ -186,12 +192,28 @@ const optionalDecimal = (max?: number) =>
     .refine((value) => value === "" || (/^\d{1,10}(\.\d{1,4})?$/.test(value) && (max === undefined || Number(value) <= max)))
     .transform((value) => (value === "" ? null : D(value)));
 
-const lineSchema = z.object({
-  variantId: gid("ProductVariant"),
-  quantity: z.coerce.number().int().min(1).max(100_000),
-  overridePrice: optionalDecimal(),
-  discountPct: optionalDecimal(100),
-});
+const quantitySchema = z.coerce.number().int().min(1).max(100_000);
+const lineSchema = z.union([
+  z.object({
+    variantId: gid("ProductVariant"),
+    quantity: quantitySchema,
+    overridePrice: optionalDecimal(),
+    discountPct: optionalDecimal(100),
+  }),
+  // M9.2: freight, fees, services: a name and a price, no product.
+  z.object({
+    custom: z.object({
+      title: z.string().trim().min(1).max(255),
+      price: optionalDecimal().transform((value, ctx) => {
+        if (value !== null) return value;
+        ctx.addIssue({ code: "custom", message: "price required" });
+        return z.NEVER;
+      }),
+    }),
+    quantity: quantitySchema,
+    discountPct: optionalDecimal(100),
+  }),
+]);
 
 const intentSchema = z.discriminatedUnion("intent", [
   z.object({
@@ -211,6 +233,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("approve"), comment: z.string().max(2000).optional() }),
   z.object({ intent: z.literal("reject"), comment: z.string().max(2000).optional() }),
   z.object({ intent: z.literal("revise") }),
+  z.object({ intent: z.literal("duplicate") }),
   z.object({ intent: z.literal("send"), message: z.string().max(5000).default("") }),
   z.object({ intent: z.literal("retrySync") }),
   z.object({
@@ -220,6 +243,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   }),
   z.object({ intent: z.literal("cancel"), reason: z.string().max(500).optional() }),
   z.object({ intent: z.literal("setExpiry"), expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  z.object({ intent: z.literal("setPoNumber"), poNumber: z.string().max(100) }),
 ]);
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -228,6 +252,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const id = params.id ?? "";
   return runAction(async () => {
     const input = parseForm(form, intentSchema);
+    let duplicated: Awaited<ReturnType<typeof duplicateQuote>> | null = null;
     switch (input.intent) {
       case "saveLines":
         await saveDraftLines(actor, id, input.lockVersion, input.lines, input.quoteDiscountPct);
@@ -243,6 +268,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         break;
       case "revise":
         await reviseQuote(actor, id);
+        break;
+      case "duplicate":
+        duplicated = await duplicateQuote(actor, id);
         break;
       case "send":
         await sendQuote(actor, id, input.message);
@@ -261,8 +289,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       case "setExpiry":
         await setExpiry(actor, id, input.expiresOn);
         break;
+      case "setPoNumber":
+        await setPoNumber(actor, id, input.poNumber);
+        break;
     }
-    return { intent: input.intent };
+    return { intent: input.intent, duplicated };
   });
 };
 
@@ -282,6 +313,16 @@ export default function QuoteDetail() {
   const sending =
     sendAccepted && quote.status === "APPROVED" && quote.attention.length === 0 && !["FAILED", "NEEDS_ATTENTION"].includes(quote.syncStatus);
   usePollWhile(syncing || sending);
+
+  // Duplicate → open the new quote; say so if some lines were left out (deleted products).
+  const navigate = useNavigate();
+  const shopify = useAppBridge();
+  const duplicated = fetcher.state === "idle" && fetcher.data?.ok ? fetcher.data.data.duplicated : null;
+  useEffect(() => {
+    if (!duplicated) return;
+    if (duplicated.dropped > 0) shopify.toast.show(t("quote.duplicateDropped", { count: duplicated.dropped }));
+    navigate(`/app/quotes/${duplicated.id}`);
+  }, [duplicated, navigate, shopify, t]);
 
   const [pdfState, setPdfState] = useState<"idle" | "loading" | "failed">("idle");
   const downloadPdf = useCallback(
@@ -319,6 +360,11 @@ export default function QuoteDetail() {
           {t("quote.actions.revise")}
         </s-button>
       )}
+      {version && perms.create && (
+        <s-button slot="secondary-actions" onClick={() => submit("duplicate")} {...busy}>
+          {t("quote.actions.duplicate")}
+        </s-button>
+      )}
       {editable && perms.import && (
         <s-button slot="secondary-actions" href={`/app/quotes/${quote.id}/import`}>
           {t("quote.actions.import")}
@@ -345,12 +391,17 @@ export default function QuoteDetail() {
         {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}
         <ProblemsBanner data={data} onResolve={(code, action) => submit("resolve", { code, action })} busy={fetcher.state !== "idle"} />
         {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
+        {perms.setPoNumber ? (
+          <PoNumberForm poNumber={quote.poNumber} />
+        ) : (
+          quote.poNumber && <s-text>{t("quote.poNumber.value", { po: quote.poNumber })}</s-text>
+        )}
       </s-stack>
 
       <CustomerSection customer={data.customer} />
       {version && (
         <LinesSection
-          key={version.number}
+          key={`${quote.id}-${version.number}`}
           quoteId={quote.id}
           lockVersion={quote.lockVersion}
           version={version}
@@ -402,6 +453,31 @@ function ExpiryForm({ expiresOn, today }: { expiresOn: string; today: string }) 
         ></s-date-field>
         <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
           {t("quote.expiry.save")}
+        </s-button>
+      </s-grid>
+      <ErrorBanner result={fetcher.data} />
+    </fetcher.Form>
+  );
+}
+
+// M9.3: the buyer's PO number (they may also add it themselves before paying).
+function PoNumberForm({ poNumber }: { poNumber: string }) {
+  const { t } = useTranslation();
+  const fetcher = useFetcher<typeof action>();
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="setPoNumber" />
+      <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
+        <s-text-field
+          label={t("quote.poNumber.label")}
+          details={t("quote.poNumber.help")}
+          name="poNumber"
+          value={poNumber}
+          maxLength={100}
+          autocomplete="off"
+        ></s-text-field>
+        <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+          {t("quote.poNumber.save")}
         </s-button>
       </s-grid>
       <ErrorBanner result={fetcher.data} />
@@ -493,7 +569,9 @@ function CustomerSection({ customer }: { customer: LoaderData["customer"] }) {
 }
 
 type EditLine = {
-  variantId: string;
+  key: string; // line id, variant id, or a new id for an unsaved custom line
+  variantId: string | null;
+  custom: boolean; // M9.2: title and price ("Your price") typed by staff
   title: string;
   sku: string;
   quantity: string;
@@ -553,7 +631,7 @@ function LinesSection({
   // With unsaved edits we keep them, so the next save fails with changedByOther instead of losing them.
   if (lockVersion !== baseLock && !dirty && !conflict) loadLatest();
 
-  const update = (index: number, field: "quantity" | "overridePrice" | "discountPct", value: string) => {
+  const update = (index: number, field: "title" | "quantity" | "overridePrice" | "discountPct", value: string) => {
     setLines((current) => current.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
     setDirty(true);
   };
@@ -584,7 +662,9 @@ function LinesSection({
       ...picked
         .filter((variant) => !current.some((line) => line.variantId === variant.id))
         .map((variant) => ({
+          key: variant.id,
           variantId: variant.id,
+          custom: false,
           title: variant.title,
           sku: variant.sku ?? "",
           quantity: "1",
@@ -597,9 +677,34 @@ function LinesSection({
     ]);
     setDirty(true);
   };
+  const addCustom = () => {
+    setLines((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        variantId: null,
+        custom: true,
+        title: "",
+        sku: "",
+        quantity: "1",
+        overridePrice: "",
+        discountPct: "",
+        catalogPrice: "",
+        lineTotal: "",
+        problems: [],
+      },
+    ]);
+    setDirty(true);
+  };
+  const customError = (line: EditLine) => line.custom && (line.title.trim() === "" || line.overridePrice.trim() === "");
   const invalid =
-    lines.some((line) => quantityError(line.quantity) || decimalError(line.overridePrice) || decimalError(line.discountPct, 100)) ||
-    decimalError(quoteDiscount, 100);
+    lines.some(
+      (line) =>
+        quantityError(line.quantity) ||
+        decimalError(line.overridePrice) ||
+        decimalError(line.discountPct, 100) ||
+        customError(line),
+    ) || decimalError(quoteDiscount, 100);
   const save = (basedOn: number) =>
     fetcher.submit(
       {
@@ -607,12 +712,11 @@ function LinesSection({
         lockVersion: String(basedOn),
         quoteDiscountPct: quoteDiscount,
         lines: JSON.stringify(
-          lines.map((line) => ({
-            variantId: line.variantId,
-            quantity: line.quantity,
-            overridePrice: line.overridePrice,
-            discountPct: line.discountPct,
-          })),
+          lines.map((line) =>
+            line.variantId === null
+              ? { custom: { title: line.title, price: line.overridePrice }, quantity: line.quantity, discountPct: line.discountPct }
+              : { variantId: line.variantId, quantity: line.quantity, overridePrice: line.overridePrice, discountPct: line.discountPct },
+          ),
         ),
       },
       { method: "post", action: `/app/quotes/${quoteId}` },
@@ -655,10 +759,23 @@ function LinesSection({
             </s-table-header-row>
             <s-table-body>
               {lines.map((line, index) => (
-                <s-table-row key={line.variantId}>
+                <s-table-row key={line.key}>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-100">
-                      <s-text>{line.title}</s-text>
+                      {line.custom && editable ? (
+                        <s-text-field
+                          label={t("quote.lines.customTitle")}
+                          labelAccessibilityVisibility="exclusive"
+                          placeholder={t("quote.lines.customPlaceholder")}
+                          value={line.title}
+                          maxLength={255}
+                          error={line.title.trim() === "" ? t("quote.lines.customTitleError") : undefined}
+                          onInput={(event) => update(index, "title", event.currentTarget.value)}
+                        ></s-text-field>
+                      ) : (
+                        <s-text>{line.title}</s-text>
+                      )}
+                      {line.custom && <s-text color="subdued">{t("quote.lines.customItem")}</s-text>}
                       {line.sku && <s-text color="subdued">{line.sku}</s-text>}
                       {line.problems.map((problem) => (
                         <s-text key={problem} tone={BLOCKING.includes(problem) ? "critical" : "caution"}>
@@ -670,7 +787,7 @@ function LinesSection({
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.quantityFor", { product: line.title })}
+                        label={t("quote.lines.quantityFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.quantity}
                         min={1}
@@ -683,17 +800,22 @@ function LinesSection({
                       line.quantity
                     )}
                   </s-table-cell>
-                  <s-table-cell>{line.catalogPrice || t("quote.lines.afterSave")}</s-table-cell>
+                  <s-table-cell>{line.custom ? "—" : line.catalogPrice || t("quote.lines.afterSave")}</s-table-cell>
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.overrideFor", { product: line.title })}
+                        label={t("quote.lines.overrideFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.overridePrice}
                         min={0}
                         step={0.01}
                         prefix={currency}
-                        error={decimalError(line.overridePrice) ? t("quote.lines.priceError") : undefined}
+                        required={line.custom}
+                        error={
+                          decimalError(line.overridePrice) || (line.custom && line.overridePrice.trim() === "")
+                            ? t("quote.lines.priceError")
+                            : undefined
+                        }
                         onInput={(event) => update(index, "overridePrice", event.currentTarget.value)}
                       ></s-number-field>
                     ) : (
@@ -703,7 +825,7 @@ function LinesSection({
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.discountFor", { product: line.title })}
+                        label={t("quote.lines.discountFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.discountPct}
                         min={0}
@@ -725,7 +847,7 @@ function LinesSection({
                       <s-button
                         variant="tertiary"
                         icon="delete"
-                        accessibilityLabel={t("quote.lines.removeFor", { product: line.title })}
+                        accessibilityLabel={t("quote.lines.removeFor", { product: line.title || t("quote.lines.customItem") })}
                         onClick={() => remove(index)}
                       ></s-button>
                     </s-table-cell>
@@ -767,6 +889,7 @@ function LinesSection({
         {editable && (
           <s-stack direction="inline" gap="base">
             <s-button onClick={addProducts}>{t("quote.lines.add")}</s-button>
+            <s-button onClick={addCustom}>{t("quote.lines.addCustom")}</s-button>
             <s-button
               variant="primary"
               onClick={() => save(baseLock)}
@@ -915,7 +1038,7 @@ function VersionsSection({
               ) : (
                 <s-unordered-list>
                   {item.changes.map((change) => (
-                    <s-list-item key={change.variantId}>
+                    <s-list-item key={change.key}>
                       {t(`quote.versions.${change.change}`, {
                         title: change.title,
                         afterQty: change.after?.quantity ?? "",

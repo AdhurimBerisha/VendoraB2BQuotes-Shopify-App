@@ -64,3 +64,29 @@ test("quantity rules", () => {
   expect(quantityProblems(10, rule)).toEqual([]);
   expect(quantityProblems(9999, { minimum: 1, maximum: null, increment: 1 })).toEqual([]);
 });
+
+// B-33: the same numbers Shopify's draftOrderCalculate gave on 2026-11-21 (dev store, CAD).
+test("discounts round down and unit prices round first, like the draft order", () => {
+  // 5 % of 2848.95 = 142.4475 → Shopify −142.44, total 2706.51 (Q-1019)
+  const q1019 = totals(
+    [
+      { quantity: 1, catalogPrice: D(1314) },
+      { quantity: 2, catalogPrice: D(830), discountPct: D(10) },
+      { quantity: 1, catalogPrice: D("45.50"), discountPct: D(10) },
+    ],
+    D(5),
+    "CAD",
+  );
+  expect([q1019.subtotal.toFixed(2), q1019.quoteDiscount.toFixed(2), q1019.total.toFixed(2)]).toEqual([
+    "2848.95",
+    "142.44",
+    "2706.51",
+  ]);
+  // 10 % of 3 × 12.35 = 3.705 → 3.70 off, line 33.35
+  expect(lineTotal({ quantity: 3, catalogPrice: D("12.35"), discountPct: D(10) }, "CAD").toFixed(2)).toBe("33.35");
+  // 5 % of 0.30 = 0.015 → 0.01 off
+  expect(lineTotal({ quantity: 1, catalogPrice: D("0.30"), discountPct: D(5) }, "CAD").toFixed(2)).toBe("0.29");
+  // An override with 4 decimals goes to Shopify as 1.23 per unit: 10 × 1.23, not 12.345 → 12.35
+  expect(lineTotal({ quantity: 10, catalogPrice: D(2), overridePrice: D("1.2345") }, "CAD").toFixed(2)).toBe("12.30");
+});
+

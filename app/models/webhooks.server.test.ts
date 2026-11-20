@@ -94,6 +94,37 @@ test("scenario 6: the same payload twice, or an older one, is ignored", async ()
   expect(saved.syncStatus).toBe("SYNCED");
 });
 
+test("M9.2: a custom line we sent matches by title; a renamed one is an edit in Shopify", async () => {
+  const { quote, draftNumber } = await sentQuote();
+  const versionId = quote.currentVersionId!;
+  await db.quoteLine.create({
+    data: {
+      versionId,
+      position: 1,
+      variantId: null,
+      productId: null,
+      titleSnapshot: "Freight: EU | pallet",
+      quantity: 1,
+      catalogPrice: D(45),
+      lineTotal: D(45),
+    },
+  });
+  const lines = (title: string) => [
+    { variant_id: 1, title: "Some product", quantity: 2 },
+    { variant_id: null, title, quantity: 1 },
+  ];
+
+  await processWebhook("DRAFT_ORDERS_UPDATE", SHOP, draftPayload(draftNumber, { line_items: lines("Freight: EU | pallet") }));
+  expect((await load(quote.id)).attention).toBeNull();
+
+  await processWebhook(
+    "DRAFT_ORDERS_UPDATE",
+    SHOP,
+    draftPayload(draftNumber, { line_items: lines("Express"), updated_at: "2026-10-31T12:00:00Z" }),
+  );
+  expect(codes((await load(quote.id)).attention)).toEqual(["CHANGED_IN_SHOPIFY"]);
+});
+
 test("same lines (e.g. our own invoice send): nothing raised", async () => {
   const { quote, draftNumber } = await sentQuote();
 

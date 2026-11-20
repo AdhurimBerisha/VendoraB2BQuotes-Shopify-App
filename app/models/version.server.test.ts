@@ -8,7 +8,7 @@ import { decide, saveApprovalRules, submitQuote } from "./approval.server";
 import { DEFAULT_RULES } from "./approval";
 import { redactShop } from "./privacy.server";
 import { createQuote, getQuote } from "./quote.server";
-import { diffVersions, reviseQuote, saveDraftLines } from "./version.server";
+import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "./version.server";
 
 const VARIANT = "gid://shopify/ProductVariant/1";
 const variants: Record<string, FakeVariant> = { [VARIANT]: { price: "100.00" } };
@@ -251,6 +251,99 @@ test("only owners change approval rules", async () => {
   await expect(saveApprovalRules(manager(), DEFAULT_RULES)).rejects.toBeInstanceOf(ForbiddenError);
 });
 
+test("duplicate: a new DRAFT at today's prices, deleted products left out, history on both", async () => {
+  const GONE = "gid://shopify/ProductVariant/2";
+  variants[GONE] = { price: "5.00" };
+  const sourceId = await draftQuote("10");
+  const source = await getQuote(SHOP, sourceId);
+  await saveDraftLines(
+    rep(),
+    sourceId,
+    source.lockVersion,
+    [
+      { variantId: VARIANT, quantity: 2, discountPct: D(10) },
+      { variantId: GONE, quantity: 1 },
+    ],
+    null,
+  );
+  await submitQuote(rep(), sourceId);
+  variants[VARIANT] = { price: "120.00" };
+  delete variants[GONE];
+
+  const { id, dropped } = await duplicateQuote(rep(), sourceId);
+
+  expect(dropped).toBe(1);
+  const copy = await getQuote(SHOP, id);
+  expect(copy.status).toBe("DRAFT");
+  expect(copy.number).not.toBe(source.number);
+  expect(copy.companyLocationId).toBe(source.companyLocationId);
+  expect(copy.currentVersion!.versionNumber).toBe(1);
+  // 2 × 120.00 − 10 % = 216.00
+  expect(copy.currentVersion!.lines.map((l) => [l.variantId, l.lineTotal.toFixed(2)])).toEqual([[VARIANT, "216.00"]]);
+  expect(copy.currentVersion!.total.toFixed(2)).toBe("216.00");
+  expect((await getQuote(SHOP, sourceId)).status).toBe("APPROVED");
+  expect(await history(id)).toEqual(["quote.created"]);
+  expect((await history(sourceId)).at(-1)).toBe("quote.duplicated");
+});
+
+test("custom lines: saved without a product, priced as entered, kept by revise and duplicate", async () => {
+  const quote = await createQuote(rep(), { locationId: "gid://shopify/CompanyLocation/1" });
+  await saveDraftLines(
+    rep(),
+    quote.id,
+    0,
+    [
+      { variantId: VARIANT, quantity: 2 },
+      { custom: { title: "Freight", price: D("45.50") }, quantity: 1, discountPct: D(10) },
+    ],
+    null,
+  );
+
+  const saved = (await getQuote(SHOP, quote.id)).currentVersion!;
+  const freight = saved.lines[1];
+  expect([freight.variantId, freight.productId, freight.titleSnapshot]).toEqual([null, null, "Freight"]);
+  // 45.50 − 10 % = 40.95; list total counts the entered price: 200 + 45.50
+  expect(freight.lineTotal.toFixed(2)).toBe("40.95");
+  expect(saved.listTotal.toFixed(2)).toBe("245.50");
+  expect(saved.total.toFixed(2)).toBe("240.95");
+
+  // Submit re-checks catalog prices; the custom line has none and stays as it is.
+  await submitQuote(rep(), quote.id);
+  const v2 = await reviseQuote(rep(), quote.id);
+  const revised = await db.quoteLine.findMany({ where: { versionId: v2.id }, orderBy: { position: "asc" } });
+  expect(revised.map((line) => [line.variantId, line.titleSnapshot, line.catalogPrice.toFixed(2)])).toEqual([
+    [VARIANT, expect.any(String), "100.00"],
+    [null, "Freight", "45.50"],
+  ]);
+
+  const { id, dropped } = await duplicateQuote(rep(), quote.id);
+  expect(dropped).toBe(0);
+  expect((await getQuote(SHOP, id)).currentVersion!.total.toFixed(2)).toBe("240.95");
+});
+
+test("diffVersions: a custom line is matched by its title", () => {
+  const custom = (title: string, quantity: number) => ({
+    variantId: null,
+    titleSnapshot: title,
+    quantity,
+    catalogPrice: D(10),
+    overridePrice: null,
+    discountPct: null,
+    lineTotal: D(10 * quantity),
+  });
+  expect(
+    diffVersions({ lines: [custom("Freight", 1), custom("Setup", 1)] }, { lines: [custom("Freight", 2), custom("Setup", 1)] }),
+  ).toEqual([
+    {
+      key: "custom:Freight",
+      title: "Freight",
+      change: "changed",
+      before: { quantity: 1, unitPrice: "10", discountPct: null, lineTotal: "10" },
+      after: { quantity: 2, unitPrice: "10", discountPct: null, lineTotal: "20" },
+    },
+  ]);
+});
+
 test("diffVersions: added, removed and changed lines; unchanged lines left out", () => {
   const line = (variantId: string, quantity: number, discountPct: string | null = null) => ({
     variantId,
@@ -265,14 +358,14 @@ test("diffVersions: added, removed and changed lines; unchanged lines left out",
   const v2 = { lines: [line("A", 1), line("B", 5, "10"), line("D", 1)] };
 
   expect(diffVersions(v1, v2)).toEqual([
-    { variantId: "C", title: "Title C", change: "removed", before: { quantity: 3, unitPrice: "10", discountPct: null, lineTotal: "30" } },
+    { key: "C", title: "Title C", change: "removed", before: { quantity: 3, unitPrice: "10", discountPct: null, lineTotal: "30" } },
     {
-      variantId: "B",
+      key: "B",
       title: "Title B",
       change: "changed",
       before: { quantity: 2, unitPrice: "10", discountPct: null, lineTotal: "20" },
       after: { quantity: 5, unitPrice: "10", discountPct: "10", lineTotal: "50" },
     },
-    { variantId: "D", title: "Title D", change: "added", after: { quantity: 1, unitPrice: "10", discountPct: null, lineTotal: "10" } },
+    { key: "D", title: "Title D", change: "added", after: { quantity: 1, unitPrice: "10", discountPct: null, lineTotal: "10" } },
   ]);
 });

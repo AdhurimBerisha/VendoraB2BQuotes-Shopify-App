@@ -14,8 +14,8 @@ import { notify } from "../models/notify.server";
 import { transition } from "../models/quote.server";
 import { checkB2b, isInstalled } from "../models/shop.server";
 import type { SyncJob } from "../models/sync.server";
+import { linesKey } from "../models/pricing";
 import { lineProblems } from "../models/version.server";
-import { linesKey } from "../models/webhooks.server";
 import { enqueue, getBoss } from "./queue.server";
 
 // M4.3: the nightly safety net for webhooks Shopify never delivered (or we lost). It compares each
@@ -70,9 +70,9 @@ const checkQuote = async (admin: AdminApiContext, shop: string, quote: OpenQuote
     }
     const synced = quote.versions.find((version) => version.id === current.syncedVersionId);
     if (!synced) return "ok";
-    const ours = linesKey(synced.lines);
+    const ours = linesKey(synced.lines.map((line) => ({ ...line, title: line.titleSnapshot })));
     const theirs = linesKey(
-      draft.lineItems.nodes.flatMap((line) => (line.variant ? [{ variantId: line.variant.id, quantity: line.quantity }] : [])),
+      draft.lineItems.nodes.map((line) => ({ variantId: line.variant?.id ?? null, title: line.title, quantity: line.quantity })),
     );
     if (ours === theirs) return "ok";
     const known = attentionItems(current.attention).find((item) => item.code === "CHANGED_IN_SHOPIFY");
@@ -89,8 +89,10 @@ const checkQuote = async (admin: AdminApiContext, shop: string, quote: OpenQuote
 const checkStock = async (admin: AdminApiContext, shop: string, quote: OpenQuote) => {
   const version = quote.versions.find((item) => item.id === quote.currentVersionId);
   if (quote.status !== "SENT" || !version?.lines.length) return false;
-  const prices = await getVariantPrices(admin, [...new Set(version.lines.map((line) => line.variantId))], quote.companyLocationId);
+  const variantIds = [...new Set(version.lines.flatMap((line) => (line.variantId ? [line.variantId] : [])))];
+  const prices = await getVariantPrices(admin, variantIds, quote.companyLocationId);
   const short = version.lines.filter((line) => {
+    if (!line.variantId) return false; // custom lines have no stock
     const price = prices.get(line.variantId);
     return price !== undefined && lineProblems(price, line.quantity, quote.currencyCode).includes("OUT_OF_STOCK");
   });

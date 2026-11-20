@@ -9,7 +9,7 @@ import type { CustomerActor } from "./actor";
 import { raise } from "./attention.server";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
-import { transition } from "./quote.server";
+import { savePoNumber, transition } from "./quote.server";
 
 // Buyers in the customer account "Quotes" page (M3.4). Drafts and internal states stay hidden.
 const VISIBLE = ["SENT", "ORDERED", "DECLINED", "EXPIRED"];
@@ -24,6 +24,7 @@ type CustomerQuote = {
   expiresAt: string | null;
   invoiceUrl: string | null;
   pdfUrl: string | null;
+  poNumber: string | null; // M9.3
 };
 type CustomerAction = "decline" | "changes";
 
@@ -68,6 +69,7 @@ const listCustomerQuotes = async (shop: string, companyIds: string[]): Promise<C
       currencyCode: quote.currencyCode,
       expiresAt: quote.expiresAt?.toISOString() ?? null,
       invoiceUrl: quote.status === "SENT" ? quote.invoiceUrl : null,
+      poNumber: quote.poNumber,
       pdfUrl: linkAlive
         ? `${quoteLink(process.env.SHOPIFY_APP_URL ?? "", {
             shop,
@@ -121,5 +123,13 @@ const customerAction = async (
   logger.info({ shop, quoteId: quote.id, action }, "customer quote action");
 };
 
-export { authenticateCustomer, customerAction, listCustomerQuotes, shopFromDest };
+// M9.3: the buyer adds their PO number to a sent quote before paying.
+const customerSetPoNumber = async (actor: CustomerActor, companyIds: string[], quoteId: string, poNumber: string) => {
+  const quote = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop, companyId: { in: companyIds } } });
+  if (!quote) throw new NotFoundError();
+  if (quote.status !== "SENT") throw new ConflictError("quote.errors.poNumberClosed");
+  await savePoNumber(async () => (await unauthenticated.admin(actor.shop)).admin, actor, quote, poNumber);
+};
+
+export { authenticateCustomer, customerAction, customerSetPoNumber, listCustomerQuotes, shopFromDest };
 export type { CustomerAction, CustomerQuote };

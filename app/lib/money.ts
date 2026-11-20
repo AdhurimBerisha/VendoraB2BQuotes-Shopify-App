@@ -24,6 +24,10 @@ const minorUnits = (currency: string): number => {
 const roundMoney = (value: Money, currency: string) =>
   value.toDecimalPlaces(minorUnits(currency), Prisma.Decimal.ROUND_HALF_UP);
 
+// Discount amounts round down (toward zero), as Shopify does for percentage discounts (B-33).
+const roundMoneyDown = (value: Money, currency: string) =>
+  value.toDecimalPlaces(minorUnits(currency), Prisma.Decimal.ROUND_DOWN);
+
 // The string Shopify accepts in MoneyInput.amount.
 const toShopifyAmount = (value: Money, currency: string) =>
   roundMoney(value, currency).toFixed(minorUnits(currency));
@@ -31,5 +35,5 @@ const toShopifyAmount = (value: Money, currency: string) =>
 const formatMoney = (value: Money, currency: string, locale = "en") =>
   new Intl.NumberFormat(locale, { style: "currency", currency }).format(value.toNumber());
 
-export { D, ZERO, formatMoney, minorUnits, roundMoney, sum, toShopifyAmount };
+export { D, ZERO, formatMoney, minorUnits, roundMoney, roundMoneyDown, sum, toShopifyAmount };
 export type { Money };

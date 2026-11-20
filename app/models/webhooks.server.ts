@@ -8,7 +8,7 @@ import type { WebhookActor } from "./actor";
 import { raise } from "./attention.server";
 import { notify } from "./notify.server";
 import { audit } from "./audit.server";
-import type { LineProblem } from "./pricing";
+import { type LineProblem, linesKey } from "./pricing";
 import { createRequestedQuote } from "./quote-request.server";
 import { type QuoteStatus, transition } from "./quote.server";
 
@@ -18,7 +18,7 @@ type DraftOrderPayload = {
   status: "open" | "invoice_sent" | "completed";
   order_id: number | null;
   updated_at: string;
-  line_items: { variant_id: number | null; quantity: number }[];
+  line_items: { variant_id: number | null; title: string; quantity: number }[];
 };
 type ProductPayload = { id: number; status?: string };
 type GetAdmin = (shop: string) => Promise<AdminApiContext>;
@@ -28,13 +28,6 @@ const defaultGetAdmin: GetAdmin = async (shop) => (await unauthenticated.admin(s
 const ACTIVE: QuoteStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
 const gid = (type: string, id: number) => `gid://shopify/${type}/${id}`;
 const webhookActor = (shop: string, topic: string): WebhookActor => ({ type: "WEBHOOK", shop, reason: topic });
-
-// Order-independent fingerprint of variant × quantity.
-const linesKey = (lines: { variantId: string; quantity: number }[]) =>
-  lines
-    .map((line) => `${line.variantId}:${line.quantity}`)
-    .sort()
-    .join("|");
 
 const processWebhook = async (topic: string, shop: string, payload: unknown, getAdmin = defaultGetAdmin) => {
   logger.info({ topic, shop }, "processing webhook");
@@ -95,11 +88,13 @@ const onDraftUpdate = async (shop: string, payload: DraftOrderPayload) => {
     if (quote.syncStatus === "QUEUED" || quote.syncStatus === "SYNCING") return;
     const synced = quote.versions.find((version) => version.id === quote.syncedVersionId);
     if (!synced) return;
-    const ours = linesKey(synced.lines);
+    const ours = linesKey(synced.lines.map((line) => ({ ...line, title: line.titleSnapshot })));
     const theirs = linesKey(
-      payload.line_items.flatMap((line) =>
-        line.variant_id ? [{ variantId: gid("ProductVariant", line.variant_id), quantity: line.quantity }] : [],
-      ),
+      payload.line_items.map((line) => ({
+        variantId: line.variant_id ? gid("ProductVariant", line.variant_id) : null,
+        title: line.title,
+        quantity: line.quantity,
+      })),
     );
     if (ours === theirs) return;
     // Scenario 16: someone edited the draft order in Shopify.
@@ -204,4 +199,4 @@ const onProductGone = async (
   logger.info({ shop, productId, code, lines: lines.length }, "product lines flagged");
 };
 
-export { linesKey, processWebhook };
+export { processWebhook };
