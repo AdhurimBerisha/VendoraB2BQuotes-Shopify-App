@@ -1,4 +1,4 @@
-import { type Money, ZERO, roundMoney, sum } from "../lib/money";
+import { type Money, ZERO, roundMoney, roundMoneyDown, sum } from "../lib/money";
 
 // Pure price math, no server imports, so pages can use it too (M2.8 live totals).
 
@@ -23,11 +23,12 @@ const unitPrice = (line: PricedLine): Money => {
   return best ? best.price : line.catalogPrice;
 };
 
-// Line total after the line discount, rounded to the currency.
+// Line total after the line discount, computed the way the draft order is (B-33): Shopify gets the
+// unit price rounded to the currency, and rounds a percentage discount on the line total down.
 const lineTotal = (line: PricedLine, currency: string): Money => {
-  const gross = unitPrice(line).mul(line.quantity);
-  const discount = line.discountPct ? gross.mul(line.discountPct).div(100) : ZERO;
-  return roundMoney(gross.minus(discount), currency);
+  const gross = roundMoney(unitPrice(line), currency).mul(line.quantity);
+  const discount = line.discountPct ? roundMoneyDown(gross.mul(line.discountPct).div(100), currency) : ZERO;
+  return gross.minus(discount);
 };
 
 // discountTotal / listTotal × 100, 4 decimals; 0 for an empty quote.
@@ -50,8 +51,9 @@ const totals = (
 ): Totals => {
   const listTotal = sum(lines.map((line) => roundMoney(line.catalogPrice.mul(line.quantity), currency)));
   const subtotal = sum(lines.map((line) => lineTotal(line, currency)));
+  // Rounded down like Shopify's percentage discount on the draft order (B-33).
   const quoteDiscount = quoteDiscountPct
-    ? roundMoney(subtotal.mul(quoteDiscountPct).div(100), currency)
+    ? roundMoneyDown(subtotal.mul(quoteDiscountPct).div(100), currency)
     : ZERO;
   const total = subtotal.minus(quoteDiscount);
   const discountTotal = listTotal.minus(total);
@@ -92,5 +94,16 @@ const BLOCKING: LineProblem[] = [
   "PRODUCT_DELETED",
 ];
 
-export { BLOCKING, discountPctOf, lineTotal, quantityProblems, totals, unitPrice };
+// Identifies a line across versions and draft orders: its variant, or custom:<title> (M9.2).
+// The title is encoded so linesKey's ":" and "|" separators stay unambiguous.
+const lineKey = (variantId: string | null, title: string) => variantId ?? `custom:${encodeURIComponent(title)}`;
+
+// Order-independent fingerprint of line × quantity (draft order ↔ quote comparison).
+const linesKey = (lines: { variantId: string | null; title: string; quantity: number }[]) =>
+  lines
+    .map((line) => `${lineKey(line.variantId, line.title)}:${line.quantity}`)
+    .sort()
+    .join("|");
+
+export { BLOCKING, discountPctOf, lineKey, lineTotal, linesKey, quantityProblems, totals, unitPrice };
 export type { LineProblem, PriceBreak, PricedLine, QuantityRule, Totals };

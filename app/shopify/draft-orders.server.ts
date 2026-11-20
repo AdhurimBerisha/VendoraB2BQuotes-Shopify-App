@@ -54,7 +54,14 @@ type DraftInputSource = {
   version: {
     versionNumber: number;
     quoteDiscountPct: Money | null;
-    lines: { variantId: string; quantity: number; catalogPrice: Money; overridePrice: Money | null; discountPct: Money | null }[];
+    lines: {
+      variantId: string | null; // null = custom line (M9.2)
+      titleSnapshot: string;
+      quantity: number;
+      catalogPrice: Money;
+      overridePrice: Money | null;
+      discountPct: Money | null;
+    }[];
   };
   location: { shippingAddress?: CompanyAddress; billingAddress?: CompanyAddress };
   shop: { quotePrefix: string; reserveInventory: boolean };
@@ -78,18 +85,20 @@ const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) =
         companyContactId: quote.companyContactId,
       },
     },
-    lineItems: version.lines.map((line) => ({
-      variantId: line.variantId,
-      quantity: line.quantity,
+    lineItems: version.lines.map((line) => {
       // Always the quote's unit price: Shopify's live price can drift after approval (exchange rates,
       // catalog edits), and the customer must pay what was approved.
-      priceOverride: {
+      const unitPrice = {
         amount: toShopifyAmount(line.overridePrice ?? line.catalogPrice, quote.currencyCode),
         currencyCode: quote.currencyCode as CurrencyCode,
-      },
-      ...(line.discountPct &&
-        !line.discountPct.isZero() && { appliedDiscount: percent(line.discountPct, "Quote discount") }),
-    })),
+      };
+      const discount = line.discountPct &&
+        !line.discountPct.isZero() && { appliedDiscount: percent(line.discountPct, "Quote discount") };
+      // A custom line (freight, fee, service) becomes a custom line item with its own title and price.
+      return line.variantId
+        ? { variantId: line.variantId, quantity: line.quantity, priceOverride: unitPrice, ...discount }
+        : { title: line.titleSnapshot, quantity: line.quantity, originalUnitPriceWithCurrency: unitPrice, ...discount };
+    }),
     ...(version.quoteDiscountPct &&
       !version.quoteDiscountPct.isZero() && {
         appliedDiscount: percent(version.quoteDiscountPct, `Quote ${label}`),
@@ -244,7 +253,7 @@ const getDraftForReconcile = async (admin: AdminApiContext, id: string) => {
         draftOrder(id: $id) {
           id status updatedAt
           order { id }
-          lineItems(first: 250) { nodes { quantity variant { id } } }
+          lineItems(first: 250) { nodes { title quantity variant { id } } }
         }
       }`,
       { variables: { id } },

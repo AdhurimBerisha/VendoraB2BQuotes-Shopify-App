@@ -171,7 +171,7 @@ const fakeShopify = ({
     }
     if (query.includes("VendoraReconcileDraft")) {
       const draft = find(variables.id);
-      const inputLines = (draft?.input.lineItems as { variantId: string; quantity: number }[] | undefined) ?? [];
+      const inputLines = (draft?.input.lineItems as { variantId?: string; title?: string; quantity: number }[] | undefined) ?? [];
       return Response.json({
         data: {
           draftOrder: draft && {
@@ -181,6 +181,7 @@ const fakeShopify = ({
             order: draft.orderId ? { id: draft.orderId } : null,
             lineItems: {
               nodes: (draft.lines ?? inputLines).map((line) => ({
+                title: ("title" in line && line.title) || "",
                 quantity: line.quantity,
                 variant: line.variantId ? { id: line.variantId } : null,
               })),

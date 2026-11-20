@@ -42,6 +42,9 @@ test("bad lines are rejected before anything is saved", async () => {
     JSON.stringify([{ variantId: "gid://shopify/ProductVariant/1", quantity: 0, overridePrice: "", discountPct: "" }]),
     JSON.stringify([{ variantId: "gid://shopify/ProductVariant/1", quantity: 1, overridePrice: "-1", discountPct: "" }]),
     JSON.stringify([{ variantId: "gid://shopify/ProductVariant/1", quantity: 1, overridePrice: "", discountPct: "101" }]),
+    // M9.2: a custom line needs a name and a price
+    JSON.stringify([{ custom: { title: " ", price: "10" }, quantity: 1, discountPct: "" }]),
+    JSON.stringify([{ custom: { title: "Freight", price: "" }, quantity: 1, discountPct: "" }]),
   ]) {
     const result = await post(quote.id, { intent: "saveLines", lockVersion: "0", lines, quoteDiscountPct: "" });
     expect(result).toMatchObject({ ok: false, error: { key: "errors.invalidInput" } });
@@ -53,13 +56,15 @@ test("valid lines are saved with prices from Shopify", async () => {
   const quote = await testQuote(SHOP);
   const lines = JSON.stringify([
     { variantId: "gid://shopify/ProductVariant/1", quantity: "3", overridePrice: "9,5", discountPct: "10" },
+    { custom: { title: " Freight ", price: "45,50" }, quantity: "1", discountPct: "" },
   ]);
 
   const result = await post(quote.id, { intent: "saveLines", lockVersion: "0", lines, quoteDiscountPct: "5" });
 
-  expect(result).toEqual({ ok: true, data: { intent: "saveLines" } });
-  const [line] = await db.quoteLine.findMany({ where: { versionId: quote.currentVersionId! } });
+  expect(result).toEqual({ ok: true, data: { intent: "saveLines", duplicated: null } });
+  const [line, freight] = await db.quoteLine.findMany({ where: { versionId: quote.currentVersionId! }, orderBy: { position: "asc" } });
   expect(line.quantity).toBe(3);
   expect(line.overridePrice?.toString()).toBe("9.5");
   expect(line.discountPct?.toString()).toBe("10");
+  expect([freight.variantId, freight.titleSnapshot, freight.catalogPrice.toString()]).toEqual([null, "Freight", "45.5"]);
 });

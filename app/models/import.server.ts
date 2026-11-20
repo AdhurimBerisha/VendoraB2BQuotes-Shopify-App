@@ -11,7 +11,7 @@ import type { StaffActor } from "./actor";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { quantityProblems } from "./pricing";
-import { type DraftLineInput, saveDraftLines } from "./version.server";
+import { type DraftLineInput, saveDraftLines, toLineInput } from "./version.server";
 
 // Spreadsheet import into a quote's draft version (scenario 10, D-7: merge duplicates and warn).
 // Nothing touches the quote until commitImport.
@@ -261,10 +261,7 @@ const commitImport = async (actor: StaffActor, importId: string, mode: "append" 
     const byVariant = new Map<string, DraftLineInput>(
       mode === "replace"
         ? []
-        : version.lines.map((line) => [
-            line.variantId,
-            { variantId: line.variantId, quantity: line.quantity, overridePrice: line.overridePrice, discountPct: line.discountPct },
-          ]),
+        : version.lines.map((line) => [line.variantId ?? line.id, toLineInput(line)]),
     );
     for (const line of incoming) {
       const existing = byVariant.get(line.variantId);

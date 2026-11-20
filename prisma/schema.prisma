@@ -97,12 +97,12 @@ model QuoteLine {
   versionId     String
   version       QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   position      Int
-  variantId     String
-  productId     String
+  variantId     String? // null = custom line (freight, fee, service; M9.2): title + price entered by staff
+  productId     String?
   sku           String?
   titleSnapshot String
   quantity      Int
-  catalogPrice  Decimal      @db.Decimal(14, 4)
+  catalogPrice  Decimal      @db.Decimal(14, 4) // custom line: the price staff entered
   overridePrice Decimal?     @db.Decimal(14, 4)
   discountPct   Decimal?     @db.Decimal(7, 4)
   lineTotal     Decimal      @db.Decimal(14, 4)

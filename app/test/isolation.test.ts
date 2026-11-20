@@ -15,7 +15,7 @@ import { cancelQuote, createQuote, expireQuote, getQuote, listQuotes, setExpiry,
 import { saveBranding, saveGeneralSettings } from "../models/shop.server";
 import { setRole } from "../models/staff.server";
 import { giveUpInvoice, giveUpSync, requestSync, sendQuote } from "../models/sync.server";
-import { refreshPrices, reviseQuote, saveDraftLines } from "../models/version.server";
+import { duplicateQuote, refreshPrices, reviseQuote, saveDraftLines } from "../models/version.server";
 import { processWebhook } from "../models/webhooks.server";
 import { staff, testQuote, testShop } from "./factories";
 import { fakeShopify } from "./fake-shopify";
@@ -84,6 +84,7 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "quote.expireQuote": HERE,
   "quote.getQuote": HERE,
   "quote.insertQuote": NA("internal; creates"),
+  "quote.quoteFields": NA("reads Shopify with the shop's own admin client"),
   "quote.listQuotes": HERE,
   "quote.quoteLabel": NA("pure"),
   "quote.quoteWhere": NA("pure; always sets shop"),
@@ -113,16 +114,17 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "sync.runSync": "sync.server.test.ts",
   "sync.sendQuote": HERE,
   "version.diffVersions": NA("pure"),
+  "version.duplicateQuote": HERE,
   "version.lineProblems": NA("pure"),
   "version.lineRows": NA("pure"),
   "version.priceLines": NA("Shopify prices with the shop's own admin client"),
   "version.refreshPrices": HERE,
   "version.reviseQuote": HERE,
   "version.saveDraftLines": HERE,
+  "version.toLineInput": NA("pure"),
   "webhook-events.forgetWebhook": NA("keyed by Shopify's webhook id"),
   "webhook-events.markWebhookProcessed": NA("keyed by Shopify's webhook id"),
   "webhook-events.recordWebhookOnce": NA("keyed by Shopify's webhook id"),
-  "webhooks.linesKey": NA("pure"),
   "webhooks.processWebhook": HERE,
 };
 
@@ -189,6 +191,7 @@ describe("shop B can't touch shop A's quote", () => {
     ["saveDraftLines", () => saveDraftLines(actorB(), QUOTE_A, 0, [], null), NotFoundError],
     ["refreshPrices", () => refreshPrices(actorB(), QUOTE_A), NotFoundError],
     ["reviseQuote", () => reviseQuote(actorB(), QUOTE_A), NotFoundError],
+    ["duplicateQuote", () => duplicateQuote(actorB(), QUOTE_A), NotFoundError],
     ["requestSync", () => requestSync(actorB(), QUOTE_A), Error],
     ["sendQuote", () => sendQuote(actorB(), QUOTE_A, ""), NotFoundError],
     ["resolveAttention", () => resolveAttention(actorB(), QUOTE_A, "PRICE_MISMATCH", "dismiss"), NotFoundError],
@@ -250,6 +253,7 @@ test("a VIEWER can't call any function that changes data", async () => {
     ["saveApprovalRules", () => saveApprovalRules(viewer, parseRules(null))],
     ["saveDraftLines", () => saveDraftLines(viewer, QUOTE_A, 0, [], null)],
     ["reviseQuote", () => reviseQuote(viewer, QUOTE_A)],
+    ["duplicateQuote", () => duplicateQuote(viewer, QUOTE_A)],
     ["requestSync", () => requestSync(viewer, QUOTE_A)],
     ["sendQuote", () => sendQuote(viewer, QUOTE_A, "")],
     ["resolveAttention", () => resolveAttention(viewer, QUOTE_A, "PRICE_MISMATCH", "dismiss")],

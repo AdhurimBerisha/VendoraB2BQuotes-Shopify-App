@@ -99,12 +99,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       discountTotal: money(version.discountTotal),
       total: money(version.total),
       lines: version.lines.map((line) => ({
+        key: line.id,
         variantId: line.variantId,
+        custom: line.variantId === null,
         title: line.titleSnapshot,
         sku: line.sku ?? "",
         quantity: line.quantity,
-        catalogPrice: money(line.catalogPrice),
-        overridePrice: percentText(line.overridePrice),
+        catalogPrice: line.variantId === null ? "" : money(line.catalogPrice),
+        // A custom line's price is edited in the "Your price" column (stored as its catalog price).
+        overridePrice: percentText(line.variantId === null ? line.catalogPrice : line.overridePrice),
         discountPct: percentText(line.discountPct),
         lineTotal: money(line.lineTotal),
         problems: problemsOf(line.problems),
@@ -187,12 +190,28 @@ const optionalDecimal = (max?: number) =>
     .refine((value) => value === "" || (/^\d{1,10}(\.\d{1,4})?$/.test(value) && (max === undefined || Number(value) <= max)))
     .transform((value) => (value === "" ? null : D(value)));
 
-const lineSchema = z.object({
-  variantId: gid("ProductVariant"),
-  quantity: z.coerce.number().int().min(1).max(100_000),
-  overridePrice: optionalDecimal(),
-  discountPct: optionalDecimal(100),
-});
+const quantitySchema = z.coerce.number().int().min(1).max(100_000);
+const lineSchema = z.union([
+  z.object({
+    variantId: gid("ProductVariant"),
+    quantity: quantitySchema,
+    overridePrice: optionalDecimal(),
+    discountPct: optionalDecimal(100),
+  }),
+  // M9.2: freight, fees, services: a name and a price, no product.
+  z.object({
+    custom: z.object({
+      title: z.string().trim().min(1).max(255),
+      price: optionalDecimal().transform((value, ctx) => {
+        if (value !== null) return value;
+        ctx.addIssue({ code: "custom", message: "price required" });
+        return z.NEVER;
+      }),
+    }),
+    quantity: quantitySchema,
+    discountPct: optionalDecimal(100),
+  }),
+]);
 
 const intentSchema = z.discriminatedUnion("intent", [
   z.object({
@@ -514,7 +533,9 @@ function CustomerSection({ customer }: { customer: LoaderData["customer"] }) {
 }
 
 type EditLine = {
-  variantId: string;
+  key: string; // line id, variant id, or a new id for an unsaved custom line
+  variantId: string | null;
+  custom: boolean; // M9.2: title and price ("Your price") typed by staff
   title: string;
   sku: string;
   quantity: string;
@@ -574,7 +595,7 @@ function LinesSection({
   // With unsaved edits we keep them, so the next save fails with changedByOther instead of losing them.
   if (lockVersion !== baseLock && !dirty && !conflict) loadLatest();
 
-  const update = (index: number, field: "quantity" | "overridePrice" | "discountPct", value: string) => {
+  const update = (index: number, field: "title" | "quantity" | "overridePrice" | "discountPct", value: string) => {
     setLines((current) => current.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
     setDirty(true);
   };
@@ -605,7 +626,9 @@ function LinesSection({
       ...picked
         .filter((variant) => !current.some((line) => line.variantId === variant.id))
         .map((variant) => ({
+          key: variant.id,
           variantId: variant.id,
+          custom: false,
           title: variant.title,
           sku: variant.sku ?? "",
           quantity: "1",
@@ -618,9 +641,34 @@ function LinesSection({
     ]);
     setDirty(true);
   };
+  const addCustom = () => {
+    setLines((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        variantId: null,
+        custom: true,
+        title: "",
+        sku: "",
+        quantity: "1",
+        overridePrice: "",
+        discountPct: "",
+        catalogPrice: "",
+        lineTotal: "",
+        problems: [],
+      },
+    ]);
+    setDirty(true);
+  };
+  const customError = (line: EditLine) => line.custom && (line.title.trim() === "" || line.overridePrice.trim() === "");
   const invalid =
-    lines.some((line) => quantityError(line.quantity) || decimalError(line.overridePrice) || decimalError(line.discountPct, 100)) ||
-    decimalError(quoteDiscount, 100);
+    lines.some(
+      (line) =>
+        quantityError(line.quantity) ||
+        decimalError(line.overridePrice) ||
+        decimalError(line.discountPct, 100) ||
+        customError(line),
+    ) || decimalError(quoteDiscount, 100);
   const save = (basedOn: number) =>
     fetcher.submit(
       {
@@ -628,12 +676,11 @@ function LinesSection({
         lockVersion: String(basedOn),
         quoteDiscountPct: quoteDiscount,
         lines: JSON.stringify(
-          lines.map((line) => ({
-            variantId: line.variantId,
-            quantity: line.quantity,
-            overridePrice: line.overridePrice,
-            discountPct: line.discountPct,
-          })),
+          lines.map((line) =>
+            line.variantId === null
+              ? { custom: { title: line.title, price: line.overridePrice }, quantity: line.quantity, discountPct: line.discountPct }
+              : { variantId: line.variantId, quantity: line.quantity, overridePrice: line.overridePrice, discountPct: line.discountPct },
+          ),
         ),
       },
       { method: "post", action: `/app/quotes/${quoteId}` },
@@ -676,10 +723,23 @@ function LinesSection({
             </s-table-header-row>
             <s-table-body>
               {lines.map((line, index) => (
-                <s-table-row key={line.variantId}>
+                <s-table-row key={line.key}>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-100">
-                      <s-text>{line.title}</s-text>
+                      {line.custom && editable ? (
+                        <s-text-field
+                          label={t("quote.lines.customTitle")}
+                          labelAccessibilityVisibility="exclusive"
+                          placeholder={t("quote.lines.customPlaceholder")}
+                          value={line.title}
+                          maxLength={255}
+                          error={line.title.trim() === "" ? t("quote.lines.customTitleError") : undefined}
+                          onInput={(event) => update(index, "title", event.currentTarget.value)}
+                        ></s-text-field>
+                      ) : (
+                        <s-text>{line.title}</s-text>
+                      )}
+                      {line.custom && <s-text color="subdued">{t("quote.lines.customItem")}</s-text>}
                       {line.sku && <s-text color="subdued">{line.sku}</s-text>}
                       {line.problems.map((problem) => (
                         <s-text key={problem} tone={BLOCKING.includes(problem) ? "critical" : "caution"}>
@@ -691,7 +751,7 @@ function LinesSection({
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.quantityFor", { product: line.title })}
+                        label={t("quote.lines.quantityFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.quantity}
                         min={1}
@@ -704,17 +764,22 @@ function LinesSection({
                       line.quantity
                     )}
                   </s-table-cell>
-                  <s-table-cell>{line.catalogPrice || t("quote.lines.afterSave")}</s-table-cell>
+                  <s-table-cell>{line.custom ? "—" : line.catalogPrice || t("quote.lines.afterSave")}</s-table-cell>
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.overrideFor", { product: line.title })}
+                        label={t("quote.lines.overrideFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.overridePrice}
                         min={0}
                         step={0.01}
                         prefix={currency}
-                        error={decimalError(line.overridePrice) ? t("quote.lines.priceError") : undefined}
+                        required={line.custom}
+                        error={
+                          decimalError(line.overridePrice) || (line.custom && line.overridePrice.trim() === "")
+                            ? t("quote.lines.priceError")
+                            : undefined
+                        }
                         onInput={(event) => update(index, "overridePrice", event.currentTarget.value)}
                       ></s-number-field>
                     ) : (
@@ -724,7 +789,7 @@ function LinesSection({
                   <s-table-cell>
                     {editable ? (
                       <s-number-field
-                        label={t("quote.lines.discountFor", { product: line.title })}
+                        label={t("quote.lines.discountFor", { product: line.title || t("quote.lines.customItem") })}
                         labelAccessibilityVisibility="exclusive"
                         value={line.discountPct}
                         min={0}
@@ -746,7 +811,7 @@ function LinesSection({
                       <s-button
                         variant="tertiary"
                         icon="delete"
-                        accessibilityLabel={t("quote.lines.removeFor", { product: line.title })}
+                        accessibilityLabel={t("quote.lines.removeFor", { product: line.title || t("quote.lines.customItem") })}
                         onClick={() => remove(index)}
                       ></s-button>
                     </s-table-cell>
@@ -788,6 +853,7 @@ function LinesSection({
         {editable && (
           <s-stack direction="inline" gap="base">
             <s-button onClick={addProducts}>{t("quote.lines.add")}</s-button>
+            <s-button onClick={addCustom}>{t("quote.lines.addCustom")}</s-button>
             <s-button
               variant="primary"
               onClick={() => save(baseLock)}
@@ -936,7 +1002,7 @@ function VersionsSection({
               ) : (
                 <s-unordered-list>
                   {item.changes.map((change) => (
-                    <s-list-item key={change.variantId}>
+                    <s-list-item key={change.key}>
                       {t(`quote.versions.${change.change}`, {
                         title: change.title,
                         afterQty: change.after?.quantity ?? "",

@@ -110,7 +110,7 @@
     "lines": {
       "title": "Lines",
       "locked": "This version is locked. Revise the quote to change it.",
-      "empty": "No products yet.",
+      "empty": "No lines yet.",
       "product": "Product",
       "quantity": "Quantity",
       "catalogPrice": "Catalog price",
@@ -129,6 +129,11 @@
       "quoteDiscount": "Quote discount (%)",
       "quoteDiscountValue": "Quote discount: {{value}} %",
       "add": "Add products",
+      "addCustom": "Add custom item",
+      "customItem": "Custom item",
+      "customTitle": "Item name",
+      "customPlaceholder": "Freight, setup fee, service…",
+      "customTitleError": "Enter a name",
       "save": "Save lines",
       "conflict": {
         "heading": "Someone else changed this quote",
