@@ -9,7 +9,7 @@ import { withoutItems } from "./attention";
 import { audit } from "./audit.server";
 import { requirePermission } from "./permissions";
 import { type LineProblem, type PricedLine, lineTotal, quantityProblems, totals } from "./pricing";
-import { transition } from "./quote.server";
+import { insertQuote, quoteFields, transition } from "./quote.server";
 
 // What staff choose per line; catalog prices come from Shopify for the quote's company location.
 type DraftLineInput = {
@@ -39,16 +39,19 @@ const lineTitle = (price: VariantPrice) =>
   price.title === "Default Title" ? price.productTitle : `${price.productTitle} – ${price.title}`;
 
 // Prices lines at the company location (Shopify, so call it outside any transaction).
+// skipMissing drops lines whose variant was deleted instead of failing (duplicating an old quote).
 const priceLines = async (
   admin: StaffActor["admin"],
   companyLocationId: string,
   currency: string,
   input: DraftLineInput[],
   quoteDiscountPct: Money | null,
+  { skipMissing = false } = {},
 ) => {
   const variantIds = [...new Set(input.map((line) => line.variantId))];
   const prices = await getVariantPrices(admin, variantIds, companyLocationId);
-  const lines = input.map((line) => {
+  const found = skipMissing ? input.filter((line) => prices.has(line.variantId)) : input;
+  const lines = found.map((line) => {
     const price = prices.get(line.variantId);
     if (!price) throw new UserError("quote.errors.variantNotFound", { variantId: line.variantId });
     const priced: PricedLine = {
@@ -248,6 +251,60 @@ const reviseQuote = async (actor: StaffActor, quoteId: string) => {
   });
 };
 
+// Any quote → a new DRAFT quote for the same company location with the current version's lines,
+// re-priced at today's catalog prices. Lines whose product was deleted are left out (`dropped`).
+const duplicateQuote = async (actor: StaffActor, sourceId: string) => {
+  requirePermission(actor, "quote.create");
+  const source = await db.quote.findFirst({
+    where: { id: sourceId, shop: actor.shop },
+    include: { currentVersion: { include: { lines: { orderBy: { position: "asc" } } } } },
+  });
+  if (!source?.currentVersion) throw new NotFoundError();
+  const from = source.currentVersion;
+
+  // Shopify first, outside the transaction: today's contact, currency and prices.
+  const fields = await quoteFields(actor, source.companyLocationId);
+  // An override price is in the old currency; a percentage discount still makes sense.
+  const sameCurrency = fields.currencyCode === source.currencyCode;
+  const input = from.lines.map((line) => ({
+    variantId: line.variantId,
+    quantity: line.quantity,
+    overridePrice: sameCurrency ? line.overridePrice : null,
+    discountPct: line.discountPct,
+  }));
+  const { lines, totals: quoteTotals } = await priceLines(
+    actor.admin,
+    fields.companyLocationId,
+    fields.currencyCode,
+    input,
+    from.quoteDiscountPct,
+    { skipMissing: true },
+  );
+  const dropped = input.length - lines.length;
+
+  return db.$transaction(async (tx) => {
+    const { quote, version } = await insertQuote(tx, actor.shop, fields, actor.userId);
+    await tx.quoteLine.createMany({ data: lineRows(version.id, lines, fields.currencyCode) });
+    await tx.quoteVersion.update({
+      where: { id: version.id },
+      data: {
+        quoteDiscountPct: from.quoteDiscountPct,
+        listTotal: quoteTotals.listTotal,
+        subtotal: quoteTotals.subtotal,
+        discountTotal: quoteTotals.discountTotal,
+        total: quoteTotals.total,
+      },
+    });
+    await audit(tx, actor, quote.id, "quote.created", { number: quote.number, duplicatedFrom: source.number });
+    await audit(tx, actor, source.id, "quote.duplicated", { to: quote.number });
+    logger.info(
+      { shop: actor.shop, sourceId, quoteId: quote.id, lines: lines.length, dropped, sameCurrency },
+      "quote duplicated",
+    );
+    return { id: quote.id, dropped };
+  });
+};
+
 type LineView = { quantity: number; unitPrice: string; discountPct: string | null; lineTotal: string };
 type LineDiff = {
   variantId: string;
@@ -290,5 +347,5 @@ const diffVersions = (before: { lines: DiffLine[] }, after: { lines: DiffLine[] 
   return diffs;
 };
 
-export { diffVersions, lineProblems, lineRows, priceLines, refreshPrices, reviseQuote, saveDraftLines };
+export { diffVersions, duplicateQuote, lineProblems, lineRows, priceLines, refreshPrices, reviseQuote, saveDraftLines };
 export type { DraftLineInput, LineDiff };

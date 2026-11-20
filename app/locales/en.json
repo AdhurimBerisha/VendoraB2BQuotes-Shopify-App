@@ -82,10 +82,13 @@
     "actions": {
       "submit": "Submit",
       "revise": "Revise (new version)",
+      "duplicate": "Duplicate",
       "import": "Import CSV",
       "cancel": "Cancel quote",
       "pdf": "Download PDF"
     },
+    "duplicateDropped_one": "{{count}} line was left out: its product no longer exists.",
+    "duplicateDropped_other": "{{count}} lines were left out: their products no longer exist.",
     "cancelModal": {
       "heading": "Cancel this quote?",
       "body": "The quote can't be sent or ordered after this. Its draft order in Shopify is deleted, so the customer's invoice link stops working.",
@@ -205,6 +208,7 @@
       "approved": "approved",
       "rejected": "rejected",
       "revised": "started a new version",
+      "duplicated": "duplicated the quote",
       "sent": "sent the invoice",
       "ordered": "the customer placed the order",
       "cancelled": "cancelled the quote",

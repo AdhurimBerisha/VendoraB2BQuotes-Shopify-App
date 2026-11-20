@@ -8,7 +8,7 @@ import { decide, saveApprovalRules, submitQuote } from "./approval.server";
 import { DEFAULT_RULES } from "./approval";
 import { redactShop } from "./privacy.server";
 import { createQuote, getQuote } from "./quote.server";
-import { diffVersions, reviseQuote, saveDraftLines } from "./version.server";
+import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "./version.server";
 
 const VARIANT = "gid://shopify/ProductVariant/1";
 const variants: Record<string, FakeVariant> = { [VARIANT]: { price: "100.00" } };
@@ -249,6 +249,41 @@ test("approve and revise at the same moment: one consistent state", async () => 
 
 test("only owners change approval rules", async () => {
   await expect(saveApprovalRules(manager(), DEFAULT_RULES)).rejects.toBeInstanceOf(ForbiddenError);
+});
+
+test("duplicate: a new DRAFT at today's prices, deleted products left out, history on both", async () => {
+  const GONE = "gid://shopify/ProductVariant/2";
+  variants[GONE] = { price: "5.00" };
+  const sourceId = await draftQuote("10");
+  const source = await getQuote(SHOP, sourceId);
+  await saveDraftLines(
+    rep(),
+    sourceId,
+    source.lockVersion,
+    [
+      { variantId: VARIANT, quantity: 2, discountPct: D(10) },
+      { variantId: GONE, quantity: 1 },
+    ],
+    null,
+  );
+  await submitQuote(rep(), sourceId);
+  variants[VARIANT] = { price: "120.00" };
+  delete variants[GONE];
+
+  const { id, dropped } = await duplicateQuote(rep(), sourceId);
+
+  expect(dropped).toBe(1);
+  const copy = await getQuote(SHOP, id);
+  expect(copy.status).toBe("DRAFT");
+  expect(copy.number).not.toBe(source.number);
+  expect(copy.companyLocationId).toBe(source.companyLocationId);
+  expect(copy.currentVersion!.versionNumber).toBe(1);
+  // 2 × 120.00 − 10 % = 216.00
+  expect(copy.currentVersion!.lines.map((l) => [l.variantId, l.lineTotal.toFixed(2)])).toEqual([[VARIANT, "216.00"]]);
+  expect(copy.currentVersion!.total.toFixed(2)).toBe("216.00");
+  expect((await getQuote(SHOP, sourceId)).status).toBe("APPROVED");
+  expect(await history(id)).toEqual(["quote.created"]);
+  expect((await history(sourceId)).at(-1)).toBe("quote.duplicated");
 });
 
 test("diffVersions: added, removed and changed lines; unchanged lines left out", () => {

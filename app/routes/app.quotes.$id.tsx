@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useCallback, useEffect, useState } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -26,7 +26,7 @@ import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
 import { logger } from "../lib/logger.server";
-import { diffVersions, reviseQuote, saveDraftLines } from "../models/version.server";
+import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "../models/version.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import { getDraftOrderSummary } from "../shopify/draft-orders.server";
 
@@ -165,6 +165,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       actor: event.actorType === "STAFF" ? staffName(event.actorId) : null,
     })),
     perms: {
+      create: can(actor, "quote.create"),
       edit: can(actor, "quote.edit"),
       submit: can(actor, "quote.submit"),
       approve: can(actor, "quote.approve"),
@@ -211,6 +212,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("approve"), comment: z.string().max(2000).optional() }),
   z.object({ intent: z.literal("reject"), comment: z.string().max(2000).optional() }),
   z.object({ intent: z.literal("revise") }),
+  z.object({ intent: z.literal("duplicate") }),
   z.object({ intent: z.literal("send"), message: z.string().max(5000).default("") }),
   z.object({ intent: z.literal("retrySync") }),
   z.object({
@@ -228,6 +230,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const id = params.id ?? "";
   return runAction(async () => {
     const input = parseForm(form, intentSchema);
+    let duplicated: Awaited<ReturnType<typeof duplicateQuote>> | null = null;
     switch (input.intent) {
       case "saveLines":
         await saveDraftLines(actor, id, input.lockVersion, input.lines, input.quoteDiscountPct);
@@ -243,6 +246,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         break;
       case "revise":
         await reviseQuote(actor, id);
+        break;
+      case "duplicate":
+        duplicated = await duplicateQuote(actor, id);
         break;
       case "send":
         await sendQuote(actor, id, input.message);
@@ -262,7 +268,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         await setExpiry(actor, id, input.expiresOn);
         break;
     }
-    return { intent: input.intent };
+    return { intent: input.intent, duplicated };
   });
 };
 
@@ -282,6 +288,16 @@ export default function QuoteDetail() {
   const sending =
     sendAccepted && quote.status === "APPROVED" && quote.attention.length === 0 && !["FAILED", "NEEDS_ATTENTION"].includes(quote.syncStatus);
   usePollWhile(syncing || sending);
+
+  // Duplicate → open the new quote; say so if some lines were left out (deleted products).
+  const navigate = useNavigate();
+  const shopify = useAppBridge();
+  const duplicated = fetcher.state === "idle" && fetcher.data?.ok ? fetcher.data.data.duplicated : null;
+  useEffect(() => {
+    if (!duplicated) return;
+    if (duplicated.dropped > 0) shopify.toast.show(t("quote.duplicateDropped", { count: duplicated.dropped }));
+    navigate(`/app/quotes/${duplicated.id}`);
+  }, [duplicated, navigate, shopify, t]);
 
   const [pdfState, setPdfState] = useState<"idle" | "loading" | "failed">("idle");
   const downloadPdf = useCallback(
@@ -319,6 +335,11 @@ export default function QuoteDetail() {
           {t("quote.actions.revise")}
         </s-button>
       )}
+      {version && perms.create && (
+        <s-button slot="secondary-actions" onClick={() => submit("duplicate")} {...busy}>
+          {t("quote.actions.duplicate")}
+        </s-button>
+      )}
       {editable && perms.import && (
         <s-button slot="secondary-actions" href={`/app/quotes/${quote.id}/import`}>
           {t("quote.actions.import")}
@@ -350,7 +371,7 @@ export default function QuoteDetail() {
       <CustomerSection customer={data.customer} />
       {version && (
         <LinesSection
-          key={version.number}
+          key={`${quote.id}-${version.number}`}
           quoteId={quote.id}
           lockVersion={quote.lockVersion}
           version={version}

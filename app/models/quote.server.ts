@@ -42,29 +42,29 @@ const transition = async (
 };
 
 // Company, contact and currency come from Shopify, never from the client.
-const createQuote = async (actor: StaffActor, input: { locationId: string }) => {
-  requirePermission(actor, "quote.create");
-  const location = await getCompanyLocation(actor.admin, input.locationId);
+const quoteFields = async (actor: StaffActor, locationId: string) => {
+  const location = await getCompanyLocation(actor.admin, locationId);
   if (!location) throw new UserError("quote.errors.locationNotFound");
   const contact = location.company.mainContact;
   if (!contact) {
     throw new UserError("quote.errors.noMainContact", { company: location.company.name });
   }
+  return {
+    companyId: location.company.id,
+    companyLocationId: location.id,
+    companyContactId: contact.id,
+    contactCustomerId: contact.customer?.id ?? null,
+    currencyCode: location.currency,
+    assignedToUserId: actor.userId,
+  };
+};
+
+const createQuote = async (actor: StaffActor, input: { locationId: string }) => {
+  requirePermission(actor, "quote.create");
+  const fields = await quoteFields(actor, input.locationId);
 
   return db.$transaction(async (tx) => {
-    const { quote, version } = await insertQuote(
-      tx,
-      actor.shop,
-      {
-        companyId: location.company.id,
-        companyLocationId: location.id,
-        companyContactId: contact.id,
-        contactCustomerId: contact.customer?.id ?? null,
-        currencyCode: location.currency,
-        assignedToUserId: actor.userId,
-      },
-      actor.userId,
-    );
+    const { quote, version } = await insertQuote(tx, actor.shop, fields, actor.userId);
     await audit(tx, actor, quote.id, "quote.created", { number: quote.number });
     logger.info({ shop: actor.shop, quoteId: quote.id, number: quote.number }, "quote created");
     return { ...quote, currentVersionId: version.id };
@@ -228,6 +228,7 @@ export {
   insertQuote,
   listFiltersSchema,
   listQuotes,
+  quoteFields,
   quoteLabel,
   quoteWhere,
   searchFilters,
