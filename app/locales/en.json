@@ -89,6 +89,12 @@
     },
     "duplicateDropped_one": "{{count}} line was left out: its product no longer exists.",
     "duplicateDropped_other": "{{count}} lines were left out: their products no longer exist.",
+    "poNumber": {
+      "label": "PO number",
+      "help": "The buyer's purchase order number. It goes on the Shopify order. The buyer can also add it before paying.",
+      "save": "Save PO number",
+      "value": "PO number: {{po}}"
+    },
     "cancelModal": {
       "heading": "Cancel this quote?",
       "body": "The quote can't be sent or ordered after this. Its draft order in Shopify is deleted, so the customer's invoice link stops working.",
@@ -202,7 +208,9 @@
       "pricesChanged": "Catalog prices changed since this quote was edited. Review the new prices.",
       "notApproved": "Only approved quotes can be sent.",
       "invalidDate": "Choose a valid date.",
-      "expiryInPast": "The expiry date can't be in the past."
+      "expiryInPast": "The expiry date can't be in the past.",
+      "poNumberTooLong": "The PO number can be at most {{max}} characters.",
+      "poNumberClosed": "The PO number can't be changed once the quote is ordered, declined, expired or cancelled."
     }
   },
   "history": {
@@ -221,7 +229,8 @@
       "expiry_changed": "changed the expiry date",
       "expiry_reminded": "sent the expiry reminder",
       "declined": "the buyer declined the quote",
-      "changes_requested": "the buyer asked for changes"
+      "changes_requested": "the buyer asked for changes",
+      "po_number_set": "set the PO number"
     },
     "sync": {
       "requested": "asked to sync with Shopify",
@@ -431,6 +440,7 @@
     "version": "Version {{version}}",
     "issued": "Issued {{date}}",
     "validUntil": "Valid until {{date}}",
+    "poNumber": "PO number: {{po}}",
     "preparedFor": "Prepared for",
     "shipTo": "Ship to",
     "billTo": "Bill to",
@@ -551,6 +561,7 @@
     "note": "Note",
     "downloadPdf": "Download PDF",
     "accept": "Review and accept",
+    "poNumber": "Your PO number (optional)",
     "errors": {
       "notFound": "This quote link doesn't work. It may have expired or been mistyped. Ask the seller for a new link.",
       "rateLimited": "Too many requests. Wait a minute, then try again.",

@@ -131,8 +131,8 @@ const fakeShopify = ({
       calls.update++;
       const draft = find(variables.id);
       if (!draft) return userErrorsJson("draftOrderUpdate", ["Draft order does not exist"]);
-      draft.input = variables.input;
-      draft.tags = variables.input.tags;
+      draft.input = { ...draft.input, ...variables.input }; // omitted fields stay, like Shopify
+      draft.tags = variables.input.tags ?? draft.tags;
       return Response.json({
         data: { draftOrderUpdate: { draftOrder: { id: draft.id, updatedAt: now() }, userErrors: [] } },
       });

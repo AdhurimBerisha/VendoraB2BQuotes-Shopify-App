@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import db from "../db.server";
-import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors";
+import { ConflictError, ForbiddenError, NotFoundError, UserError } from "../lib/errors";
 import { D } from "../lib/money";
 import { fakeShopify } from "../test/fake-shopify";
 import { staff, testQuote, testShop } from "../test/factories";
 import { redactShop } from "./privacy.server";
-import { createQuote, getQuote, transition } from "./quote.server";
+import { createQuote, getQuote, setPoNumber, transition } from "./quote.server";
 import { saveDraftLines } from "./version.server";
 
 let SHOP: string;
@@ -212,3 +212,23 @@ test("a viewer can't create or edit quotes, even bypassing the page", async () =
     ForbiddenError,
   );
 });
+
+test("M9.3: the PO number goes on the quote and only the PO number on its draft order", async () => {
+  const draft = shopify.seedDraft({ tags: [], companyId: "gid://shopify/Company/1", locationId: "gid://shopify/CompanyLocation/1" });
+  draft.input = { lineItems: [{ variantId: "gid://shopify/ProductVariant/1", quantity: 2 }], note: "Vendora Q-1 v1" };
+  const quote = await testQuote(SHOP, { overrides: { status: "SENT", draftOrderId: draft.id } });
+
+  await setPoNumber(actor(), quote.id, " PO-77 ");
+
+  expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).poNumber).toBe("PO-77");
+  expect(draft.input).toMatchObject({ poNumber: "PO-77", note: "Vendora Q-1 v1", lineItems: [{ quantity: 2 }] });
+
+  await setPoNumber(actor(), quote.id, "");
+  expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).poNumber).toBeNull();
+  expect(draft.input.poNumber).toBeNull();
+
+  await expect(setPoNumber(actor(), quote.id, "x".repeat(101))).rejects.toBeInstanceOf(UserError);
+  await db.quote.update({ where: { id: quote.id }, data: { status: "ORDERED" } });
+  await expect(setPoNumber(actor(), quote.id, "PO-78")).rejects.toBeInstanceOf(ConflictError);
+});
+

@@ -1,12 +1,14 @@
 import { logger } from "../lib/logger.server";
 import type { Prisma } from "@prisma/client";
+import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import db from "../db.server";
 import { addDaysEndOfDay, endOfLocalDay } from "../lib/dates";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { enqueue, getBoss } from "../jobs/queue.server";
 import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
-import type { StaffActor, SystemActor } from "./actor";
+import { updateDraftOrder } from "../shopify/draft-orders.server";
+import type { Actor, StaffActor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
 import { requireCancel, requirePermission } from "./permissions";
 import { QUOTE_STATUSES, type QuoteStatus } from "./quote";
@@ -216,6 +218,39 @@ const expireQuote = async (shop: string, quoteId: string, now = new Date()) => {
   return true;
 };
 
+const PO_MAX = 100;
+
+// M9.3: the buyer's purchase-order number, on the quote and on its draft order right away (the buyer
+// may open checkout next), so the Shopify order carries it. Staff, the customer account page and the
+// public quote page end here; each caller checks who may set it. "" clears it.
+const savePoNumber = async (
+  getAdmin: () => Promise<AdminApiContext>,
+  actor: Actor,
+  quote: { id: string; shop: string; status: string; draftOrderId: string | null },
+  value: string,
+) => {
+  const poNumber = value.trim() || null;
+  if (poNumber && poNumber.length > PO_MAX) throw new UserError("quote.errors.poNumberTooLong", { max: PO_MAX });
+  if (!OPEN.includes(quote.status as QuoteStatus)) throw new ConflictError("quote.errors.poNumberClosed");
+  // Database first: a sync starting now sends the new number too (draftOrderInput).
+  await db.$transaction(async (tx) => {
+    await tx.quote.update({ where: { id: quote.id }, data: { poNumber } });
+    await audit(tx, actor, quote.id, "quote.po_number_set", { poNumber });
+  });
+  if (quote.draftOrderId) await updateDraftOrder(await getAdmin(), quote.draftOrderId, { poNumber });
+  logger.info(
+    { shop: quote.shop, quoteId: quote.id, by: actor.type, cleared: poNumber === null, draftOrder: !!quote.draftOrderId },
+    "po number saved",
+  );
+};
+
+const setPoNumber = async (actor: StaffActor, quoteId: string, poNumber: string) => {
+  requirePermission(actor, "quote.edit");
+  const quote = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
+  if (!quote) throw new NotFoundError();
+  await savePoNumber(async () => actor.admin, actor, quote, poNumber);
+};
+
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
 export {
@@ -231,8 +266,10 @@ export {
   quoteFields,
   quoteLabel,
   quoteWhere,
+  savePoNumber,
   searchFilters,
   setExpiry,
+  setPoNumber,
   transition,
 };
 export type { QuoteAction, QuoteFilters, QuoteStatus };

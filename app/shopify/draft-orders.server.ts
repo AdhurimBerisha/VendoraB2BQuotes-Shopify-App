@@ -50,6 +50,7 @@ type DraftInputSource = {
     companyLocationId: string;
     companyContactId: string;
     expiresAt: Date | null;
+    poNumber: string | null; // M9.3
   };
   version: {
     versionNumber: number;
@@ -106,12 +107,12 @@ const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) =
     shippingAddress: toMailingAddress(location.shippingAddress),
     billingAddress: toMailingAddress(location.billingAddress ?? location.shippingAddress),
     note: `Vendora ${label} v${version.versionNumber}`,
+    poNumber: quote.poNumber, // null clears one removed in Vendora
     tags: [quoteTag(quote.id)],
     ...(shop.reserveInventory &&
       quote.expiresAt && { reserveInventoryUntil: quote.expiresAt.toISOString() }),
   };
 };
-type DraftOrderInput = ReturnType<typeof draftOrderInput>;
 
 // Takes Shopify's full input type: the onboarding connection test sends a custom line, not a quote.
 const createDraftOrder = async (admin: AdminApiContext, input: AdminDraftOrderInput) => {
@@ -131,7 +132,8 @@ const createDraftOrder = async (admin: AdminApiContext, input: AdminDraftOrderIn
   return draftOrder;
 };
 
-const updateDraftOrder = async (admin: AdminApiContext, id: string, input: DraftOrderInput) => {
+// Fields left out of `input` stay as they are (M9.3 sends only the PO number).
+const updateDraftOrder = async (admin: AdminApiContext, id: string, input: AdminDraftOrderInput) => {
   const response = await call(() =>
     admin.graphql(
       `#graphql

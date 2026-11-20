@@ -21,7 +21,7 @@ import { resolveAttention } from "../models/attention-actions.server";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
 import { BLOCKING, type LineProblem } from "../models/pricing";
-import { cancelQuote, getQuote, quoteLabel, setExpiry } from "../models/quote.server";
+import { cancelQuote, getQuote, quoteLabel, setExpiry, setPoNumber } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
@@ -86,6 +86,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       rep: staffName(quote.assignedToUserId),
       expires: quote.expiresAt ? when(quote.expiresAt) : null,
       expiresOn: quote.expiresAt ? localDateString(quote.expiresAt, timezone) : "",
+      poNumber: quote.poNumber ?? "",
       today: localDateString(new Date(), timezone),
       draftOrderNumericId: quote.draftOrderId?.split("/").pop() ?? null,
       orderNumericId: quote.orderId?.split("/").pop() ?? null,
@@ -177,6 +178,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       import: can(actor, "import.run"),
       retry: can(actor, "attention.resolve"),
       setExpiry: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
+      setPoNumber: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
     },
   };
 };
@@ -241,6 +243,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   }),
   z.object({ intent: z.literal("cancel"), reason: z.string().max(500).optional() }),
   z.object({ intent: z.literal("setExpiry"), expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  z.object({ intent: z.literal("setPoNumber"), poNumber: z.string().max(100) }),
 ]);
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -285,6 +288,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         break;
       case "setExpiry":
         await setExpiry(actor, id, input.expiresOn);
+        break;
+      case "setPoNumber":
+        await setPoNumber(actor, id, input.poNumber);
         break;
     }
     return { intent: input.intent, duplicated };
@@ -385,6 +391,11 @@ export default function QuoteDetail() {
         {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}
         <ProblemsBanner data={data} onResolve={(code, action) => submit("resolve", { code, action })} busy={fetcher.state !== "idle"} />
         {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
+        {perms.setPoNumber ? (
+          <PoNumberForm poNumber={quote.poNumber} />
+        ) : (
+          quote.poNumber && <s-text>{t("quote.poNumber.value", { po: quote.poNumber })}</s-text>
+        )}
       </s-stack>
 
       <CustomerSection customer={data.customer} />
@@ -442,6 +453,31 @@ function ExpiryForm({ expiresOn, today }: { expiresOn: string; today: string }) 
         ></s-date-field>
         <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
           {t("quote.expiry.save")}
+        </s-button>
+      </s-grid>
+      <ErrorBanner result={fetcher.data} />
+    </fetcher.Form>
+  );
+}
+
+// M9.3: the buyer's PO number (they may also add it themselves before paying).
+function PoNumberForm({ poNumber }: { poNumber: string }) {
+  const { t } = useTranslation();
+  const fetcher = useFetcher<typeof action>();
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="setPoNumber" />
+      <s-grid gridTemplateColumns="1fr auto" gap="small-200" alignItems="end">
+        <s-text-field
+          label={t("quote.poNumber.label")}
+          details={t("quote.poNumber.help")}
+          name="poNumber"
+          value={poNumber}
+          maxLength={100}
+          autocomplete="off"
+        ></s-text-field>
+        <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+          {t("quote.poNumber.save")}
         </s-button>
       </s-grid>
       <ErrorBanner result={fetcher.data} />

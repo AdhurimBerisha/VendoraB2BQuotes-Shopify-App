@@ -5,7 +5,7 @@ import { enqueue } from "../jobs/queue.server";
 import { testQuote, testShop } from "../test/factories";
 import type { CustomerActor } from "./actor";
 import { attentionItems } from "./attention";
-import { authenticateCustomer, customerAction, listCustomerQuotes, shopFromDest } from "./customer-quotes.server";
+import { authenticateCustomer, customerAction, customerSetPoNumber, listCustomerQuotes, shopFromDest } from "./customer-quotes.server";
 import { redactShop } from "./privacy.server";
 
 vi.mock("../jobs/queue.server", () => ({ enqueue: vi.fn(async () => "job-id"), getBoss: vi.fn(async () => ({})) }));
@@ -142,3 +142,19 @@ test("a quote that isn't SENT is a 409; an empty message a 400", async () => {
   expect(await statusOf(customerAction(actor, [COMPANY_A], sent.id, "changes", "   "))).toBe(400);
   expect(enqueueMock).not.toHaveBeenCalled();
 });
+
+test("M9.3: the buyer saves a PO number on a SENT quote (no draft order → no Shopify call); listed back", async () => {
+  const quote = await sentQuote({ companyId: COMPANY_A });
+
+  await customerSetPoNumber(actor, [COMPANY_A], quote.id, " PO-555 ");
+
+  expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).poNumber).toBe("PO-555");
+  const event = await db.auditEvent.findFirstOrThrow({ where: { shop: SHOP, quoteId: quote.id, action: "quote.po_number_set" } });
+  expect([event.actorType, event.actorId]).toEqual(["CUSTOMER", "gid://shopify/Customer/1"]);
+  expect((await listCustomerQuotes(SHOP, [COMPANY_A])).find((item) => item.id === quote.id)?.poNumber).toBe("PO-555");
+
+  await expect(customerSetPoNumber(actor, [COMPANY_B], quote.id, "PO-1")).rejects.toMatchObject({ status: 404 });
+  await db.quote.update({ where: { id: quote.id }, data: { status: "ORDERED" } });
+  await expect(customerSetPoNumber(actor, [COMPANY_A], quote.id, "PO-1")).rejects.toMatchObject({ status: 409 });
+});
+

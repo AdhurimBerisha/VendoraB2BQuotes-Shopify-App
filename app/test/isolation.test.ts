@@ -6,12 +6,21 @@ import { parseRules } from "../models/approval";
 import { decide, saveApprovalRules, submitQuote } from "../models/approval.server";
 import { resolveAttention } from "../models/attention-actions.server";
 import { audit, quoteHistory } from "../models/audit.server";
-import { customerAction, listCustomerQuotes } from "../models/customer-quotes.server";
+import { customerAction, customerSetPoNumber, listCustomerQuotes } from "../models/customer-quotes.server";
 import { commitImport, startImport } from "../models/import.server";
 import { listFailedJobs, retryFailedJob } from "../models/jobs.server";
 import { loadQuotePdfData } from "../models/pdf.server";
 import { redactCustomer, redactShop } from "../models/privacy.server";
-import { cancelQuote, createQuote, expireQuote, getQuote, listQuotes, setExpiry, transition } from "../models/quote.server";
+import {
+  cancelQuote,
+  createQuote,
+  expireQuote,
+  getQuote,
+  listQuotes,
+  setExpiry,
+  setPoNumber,
+  transition,
+} from "../models/quote.server";
 import { saveBranding, saveGeneralSettings } from "../models/shop.server";
 import { setRole } from "../models/staff.server";
 import { giveUpInvoice, giveUpSync, requestSync, sendQuote } from "../models/sync.server";
@@ -44,6 +53,7 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "audit.quoteHistory": HERE,
   "customer-quotes.authenticateCustomer": NA("shop from the verified session token"),
   "customer-quotes.customerAction": HERE,
+  "customer-quotes.customerSetPoNumber": HERE,
   "customer-quotes.listCustomerQuotes": HERE,
   "customer-quotes.shopFromDest": NA("pure"),
   "health.isDegraded": NA("process-wide, no shop data"),
@@ -74,6 +84,7 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "privacy.handlePrivacyWebhook": "privacy.server.test.ts",
   "privacy.redactCustomer": HERE,
   "privacy.redactShop": "privacy.server.test.ts",
+  "public-quote.acceptPublicQuote": "routes/q.$token/route.test.ts",
   "public-quote.findPublicQuote": "routes/q.$token/route.test.ts",
   "public-quote.notFound": NA("pure"),
   "public-quote.recordView": NA("takes a quote already found by findPublicQuote"),
@@ -89,7 +100,9 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "quote.quoteLabel": NA("pure"),
   "quote.quoteWhere": NA("pure; always sets shop"),
   "quote.searchFilters": NA("Shopify search with the shop's own admin client"),
+  "quote.savePoNumber": NA("internal; every caller checks access first"),
   "quote.setExpiry": HERE,
+  "quote.setPoNumber": HERE,
   "quote.transition": HERE,
   "shop.brandingFromForm": NA("pure"),
   "shop.generalSettingsFromForm": NA("pure"),
@@ -185,6 +198,7 @@ describe("shop B can't touch shop A's quote", () => {
     ["getQuote", () => getQuote(SHOP_B, QUOTE_A), NotFoundError],
     ["cancelQuote", () => cancelQuote(actorB(), QUOTE_A), NotFoundError],
     ["setExpiry", () => setExpiry(actorB(), QUOTE_A, "2099-06-01"), Error],
+    ["setPoNumber", () => setPoNumber(actorB(), QUOTE_A, "PO-B"), NotFoundError],
     ["transition", () => db.$transaction((tx) => transition(tx, SHOP_B, QUOTE_A, "cancel", "CANCELLED")), Error],
     ["submitQuote", () => submitQuote(actorB(), QUOTE_A), NotFoundError],
     ["decide", () => decide(actorB(), QUOTE_A, "APPROVED"), NotFoundError],
@@ -198,6 +212,7 @@ describe("shop B can't touch shop A's quote", () => {
     ["startImport", () => startImport(actorB(), QUOTE_A, csv()), NotFoundError],
     ["loadQuotePdfData", () => loadQuotePdfData(shopify.admin, SHOP_B, QUOTE_A), NotFoundError],
     ["customerAction", () => customerAction(customerB(), ["gid://shopify/Company/1"], QUOTE_A, "decline", "no"), NotFoundError],
+    ["customerSetPoNumber", () => customerSetPoNumber(customerB(), ["gid://shopify/Company/1"], QUOTE_A, "PO-B"), NotFoundError],
   ];
 
   test.each(rejected)("%s is refused", async (_name, call, error) => {
@@ -248,6 +263,7 @@ test("a VIEWER can't call any function that changes data", async () => {
     ["createQuote", () => createQuote(viewer, { locationId: "gid://shopify/CompanyLocation/1" })],
     ["cancelQuote", () => cancelQuote(viewer, QUOTE_A)],
     ["setExpiry", () => setExpiry(viewer, QUOTE_A, "2099-06-01")],
+    ["setPoNumber", () => setPoNumber(viewer, QUOTE_A, "PO-V")],
     ["submitQuote", () => submitQuote(viewer, QUOTE_A)],
     ["decide", () => decide(viewer, QUOTE_A, "APPROVED")],
     ["saveApprovalRules", () => saveApprovalRules(viewer, parseRules(null))],
