@@ -178,6 +178,14 @@ export type VendoraInvoiceSendMutationVariables = AdminTypes.Exact<{
 
 export type VendoraInvoiceSendMutation = { draftOrderInvoiceSend?: AdminTypes.Maybe<{ draftOrder?: AdminTypes.Maybe<Pick<AdminTypes.DraftOrder, 'id' | 'invoiceSentAt' | 'invoiceUrl'>>, userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
 
+export type VendoraFlowTriggerMutationVariables = AdminTypes.Exact<{
+  handle: AdminTypes.Scalars['String']['input'];
+  payload: AdminTypes.Scalars['JSON']['input'];
+}>;
+
+
+export type VendoraFlowTriggerMutation = { flowTriggerReceive?: AdminTypes.Maybe<{ userErrors: Array<Pick<AdminTypes.UserError, 'field' | 'message'>> }> };
+
 export type VendoraLocationCountryQueryVariables = AdminTypes.Exact<{
   id: AdminTypes.Scalars['ID']['input'];
 }>;
@@ -237,6 +245,7 @@ interface GeneratedMutationTypes {
   "#graphql\n      mutation VendoraTagsAdd($id: ID!, $tags: [String!]!) {\n        tagsAdd(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsAddMutation, variables: VendoraTagsAddMutationVariables},
   "#graphql\n      mutation VendoraTagsRemove($id: ID!, $tags: [String!]!) {\n        tagsRemove(id: $id, tags: $tags) { userErrors { field message } }\n      }": {return: VendoraTagsRemoveMutation, variables: VendoraTagsRemoveMutationVariables},
   "#graphql\n      mutation VendoraInvoiceSend($id: ID!, $email: EmailInput) {\n        draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id invoiceSentAt invoiceUrl } userErrors { field message } }\n      }": {return: VendoraInvoiceSendMutation, variables: VendoraInvoiceSendMutationVariables},
+  "#graphql\n      mutation VendoraFlowTrigger($handle: String!, $payload: JSON!) {\n        flowTriggerReceive(handle: $handle, payload: $payload) { userErrors { field message } }\n      }": {return: VendoraFlowTriggerMutation, variables: VendoraFlowTriggerMutationVariables},
 }
 declare module '@shopify/admin-api-client' {
   type InputMaybe<T> = AdminTypes.InputMaybe<T>;
