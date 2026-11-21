@@ -4,7 +4,15 @@ import db from "../db.server";
 import { staff, testQuote, testShop } from "../test/factories";
 import { fakeShopify } from "../test/fake-shopify";
 import { redactShop } from "./privacy.server";
-import { assertB2b, checkB2b, missingScopes, orB2bLost, takeWelcomeBack, upsertShopOnInstall } from "./shop.server";
+import {
+  assertB2b,
+  checkB2b,
+  missingScopes,
+  orB2bLost,
+  takeWelcomeBack,
+  updateShopFromWebhook,
+  upsertShopOnInstall,
+} from "./shop.server";
 import { requestSync, runSync } from "./sync.server";
 import { ShopifyDenied } from "../shopify/client.server";
 
@@ -125,4 +133,21 @@ test("missingScopes: what SCOPES asks for and the session lacks; write_x covers 
   expect(missingScopes("write_products, read_customers, write_draft_orders")).toEqual([]);
   expect(missingScopes("read_products,write_draft_orders")).toEqual(["read_customers"]);
   expect(missingScopes(undefined)).toEqual(["read_products", "read_customers", "write_draft_orders"]);
+});
+
+test("shop/update refreshes name, currency and time zone; bad or missing fields keep the old values", async () => {
+  const shop = await newShop({ timezone: "UTC", currencyCode: "USD", name: "Old name" });
+  const read = () => db.shop.findUniqueOrThrow({ where: { id: shop } });
+
+  await updateShopFromWebhook(shop, { name: "New name", currency: "EUR", iana_timezone: "Europe/Berlin" });
+  expect(await read()).toMatchObject({ name: "New name", currencyCode: "EUR", timezone: "Europe/Berlin" });
+
+  await updateShopFromWebhook(shop, { name: "New name", currency: "EUR", iana_timezone: "Mars/Olympus" });
+  expect((await read()).timezone).toBe("Europe/Berlin");
+
+  await updateShopFromWebhook(shop, { iana_timezone: null, currency: null });
+  expect(await read()).toMatchObject({ currencyCode: "EUR", timezone: "Europe/Berlin" });
+
+  await updateShopFromWebhook(shop, "not an object");
+  expect((await read()).name).toBe("New name");
 });

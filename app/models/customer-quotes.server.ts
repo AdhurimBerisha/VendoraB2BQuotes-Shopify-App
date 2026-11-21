@@ -22,6 +22,7 @@ type CustomerQuote = {
   total: string; // decimal string; the extension formats it in the buyer's locale
   currencyCode: string;
   expiresAt: string | null;
+  timeZone: string; // M10.1: the shop's zone, so the buyer sees the shop's expiry date, not their own day
   invoiceUrl: string | null;
   pdfUrl: string | null;
   poNumber: string | null; // M9.3
@@ -68,6 +69,7 @@ const listCustomerQuotes = async (shop: string, companyIds: string[]): Promise<C
       total: quote.currentVersion?.total.toString() ?? "0",
       currencyCode: quote.currencyCode,
       expiresAt: quote.expiresAt?.toISOString() ?? null,
+      timeZone: shopRow.timezone,
       invoiceUrl: quote.status === "SENT" ? quote.invoiceUrl : null,
       poNumber: quote.poNumber,
       pdfUrl: linkAlive

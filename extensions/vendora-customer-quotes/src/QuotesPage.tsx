@@ -28,6 +28,7 @@ type CustomerQuote = {
   total: string;
   currencyCode: string;
   expiresAt: string | null;
+  timeZone: string;
   invoiceUrl: string | null;
   pdfUrl: string | null;
   poNumber: string | null;
@@ -157,7 +158,7 @@ const QuotesPage = () => {
                 {formatCurrency(Number(quote.total), { currency: quote.currencyCode })} {quote.currencyCode}
               </s-text>
               {quote.expiresAt && (
-                <s-text>{t("validUntil", { date: formatDate(new Date(quote.expiresAt)) })}</s-text>
+                <s-text>{t("validUntil", { date: formatDate(new Date(quote.expiresAt), { timeZone: quote.timeZone }) })}</s-text>
               )}
             </s-stack>
             {quote.status === "SENT" && <PoNumberField quoteId={quote.id} poNumber={quote.poNumber} onSaved={load} />}
