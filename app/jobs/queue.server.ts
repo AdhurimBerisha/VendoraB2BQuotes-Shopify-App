@@ -23,6 +23,8 @@ const QUEUES = {
   reconcile: { retryLimit: 3, retryDelay: 600, retryBackoff: true, expireInSeconds: 1800 },
   // A provider outage or a bad token only delays emails (scenario 13).
   "send-email": { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
+  // M9.4: a Flow trigger that can't be sent within a few hours is no longer useful.
+  "flow-trigger": { retryLimit: 5, retryDelay: 60, retryBackoff: true, retryDelayMax: 3600 },
 };
 type QueueName = keyof typeof QUEUES;
 

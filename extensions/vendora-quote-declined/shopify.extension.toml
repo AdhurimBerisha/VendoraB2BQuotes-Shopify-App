@@ -1,0 +1,41 @@
+# M9.4: Shopify Flow trigger, sent by app/models/flow.server.ts (flowTriggerReceive).
+# The payload must have every field below; keep them in step with flowPayload there.
+[[extensions]]
+name = "Quote declined"
+handle = "vendora-quote-declined"
+type = "flow_trigger"
+uid = "7d404b5b-9b86-77ed-dac6-83066b171d2736180c83"
+description = "The buyer declined a Vendora quote."
+
+[settings]
+
+  [[settings.fields]]
+  type = "company_reference"
+
+  [[settings.fields]]
+  type = "company_contact_reference"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Quote number"
+  description = "The quote's number, for example Q-1001."
+
+  [[settings.fields]]
+  type = "url"
+  key = "Quote URL"
+  description = "The quote in Vendora (Shopify admin)."
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Total"
+  description = "The quote total before tax and shipping."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Currency"
+  description = "The quote's currency code, for example CAD."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "PO number"
+  description = "The buyer's purchase order number; empty if none."

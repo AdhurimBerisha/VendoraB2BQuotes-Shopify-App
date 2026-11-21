@@ -5,7 +5,9 @@ import { QUEUES, type QueueName, getBoss } from "./queue.server";
 import { runPrivacy, type PrivacyJob } from "./privacy.server";
 import type { SendEmailJob } from "../models/notify.server";
 import { type SendInvoiceJob, type SyncJob, giveUpInvoice, giveUpSync } from "../models/sync.server";
+import type { FlowTriggerJob } from "../models/flow.server";
 import { runExpireQuotes } from "./expire-quotes.server";
+import { runFlowTrigger } from "./flow-trigger.server";
 import { runReconcileAll, runReconcileShop } from "./reconcile.server";
 import { type ImportCsvJob, runImportCsv } from "./import-csv.server";
 import { type ProcessWebhookJob, runProcessWebhook } from "./process-webhook.server";
@@ -64,6 +66,7 @@ const startWorkers = async () => {
   await boss.work<{ shop: string }>("reconcile", one, handle("reconcile", (job) => runReconcileShop(job.data.shop)));
   await boss.work<PrivacyJob>("privacy", one, handle("privacy", (job) => runPrivacy(job.data)));
   await boss.work<SendEmailJob>("send-email", one, handle("send-email", (job) => runSendEmail(job.data, { jobId: job.id })));
+  await boss.work<FlowTriggerJob>("flow-trigger", one, handle("flow-trigger", (job) => runFlowTrigger(job.data)));
   logger.info("[workers] started");
 
   // Let running jobs finish before the process exits.

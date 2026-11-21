@@ -7,7 +7,7 @@ embedded = true
 name = "Vendora Staging"
 
 [access_scopes]
-scopes = "read_products,read_customers,write_draft_orders,read_inventory,read_orders,write_app_proxy"
+scopes = "read_products,read_customers,read_companies,write_draft_orders,read_inventory,read_orders,write_app_proxy"
 
 [webhooks]
 api_version = "2026-10"
