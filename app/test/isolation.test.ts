@@ -56,6 +56,7 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "customer-quotes.customerSetPoNumber": HERE,
   "customer-quotes.listCustomerQuotes": HERE,
   "customer-quotes.shopFromDest": NA("pure"),
+  "flow.queueFlowTrigger": NA("called by audit() with the acting shop, inside its transaction"),
   "health.isDegraded": NA("process-wide, no shop data"),
   "health.recordHealth": NA("process-wide, no shop data"),
   "health.resetHealth": NA("process-wide, no shop data"),

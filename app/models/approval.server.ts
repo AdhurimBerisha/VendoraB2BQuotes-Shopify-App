@@ -3,6 +3,7 @@ import db from "../db.server";
 import { ConflictError, ForbiddenError, NotFoundError, UserError } from "../lib/errors";
 import type { StaffActor } from "./actor";
 import { type ApprovalRules, approvalReasons, approvalRulesSchema, parseRules } from "./approval";
+import { getBoss } from "../jobs/queue.server";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
 import { requirePermission } from "./permissions";
@@ -17,6 +18,7 @@ const hasBlockingProblem = (problems: unknown) =>
 const submitQuote = async (actor: StaffActor, quoteId: string) => {
   requirePermission(actor, "quote.submit");
   await refreshPrices(actor, quoteId); // throws quote.errors.pricesChanged if catalog prices moved
+  await getBoss(); // "quote.approved" queues a Flow trigger inside the transaction (see enqueue)
 
   const result = await db.$transaction(async (tx) => {
     // Lock the quote row first (M4.4): a save in flight finishes before we read its lines, and a
@@ -73,6 +75,7 @@ const decide = async (
   requirePermission(actor, "quote.approve");
   const trimmed = comment?.trim() || null;
   if (decision === "REJECTED" && !trimmed) throw new UserError("approval.errors.commentRequired");
+  await getBoss(); // "quote.approved" queues a Flow trigger inside the transaction (see enqueue)
 
   const requestedBy = await db.$transaction(async (tx) => {
     const quote = await tx.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
