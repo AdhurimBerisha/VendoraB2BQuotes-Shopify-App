@@ -113,6 +113,7 @@ const MODEL_FUNCTIONS: Record<string, string> = {
   "shop.markUninstalled": NA("webhook HMAC gives the shop"),
   "shop.saveBranding": NA("own shop only, no id"),
   "shop.saveGeneralSettings": NA("own shop only, no id"),
+  "shop.updateShopFromWebhook": NA("webhook HMAC gives the shop"),
   "shop.upsertShopOnInstall": NA("OAuth gives the shop"),
   "staff.getNotificationPrefs": NA("own staff row"),
   "staff.listStaff": NA("where { shop } only"),

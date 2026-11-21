@@ -97,6 +97,42 @@ const markUninstalled = async (shop: string) => {
   ]);
 };
 
+// M10.1 shop/update webhook: the merchant changed the store's name, currency or time zone.
+// A missing/null field keeps the stored value; an unknown zone is ignored (Intl would throw on every date).
+// ponytail: last delivery wins; Shopify can deliver out of order, add an updated_at check if that ever matters.
+const shopUpdateSchema = z.object({
+  name: z.string().min(1).nullish(),
+  currency: z.string().length(3).nullish(),
+  iana_timezone: z.string().min(1).nullish(),
+});
+
+const isTimeZone = (timeZone: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const updateShopFromWebhook = async (shop: string, payload: unknown) => {
+  const parsed = shopUpdateSchema.safeParse(payload);
+  if (!parsed.success) {
+    logger.warn({ shop, issues: parsed.error.issues.length }, "shop/update payload not understood, ignored");
+    return;
+  }
+  const { name, currency, iana_timezone: timezone } = parsed.data;
+  if (timezone && !isTimeZone(timezone)) logger.warn({ shop, timezone }, "shop/update unknown time zone, kept the old one");
+  const data = {
+    ...(name && { name }),
+    ...(currency && { currencyCode: currency }),
+    ...(timezone && isTimeZone(timezone) && { timezone }),
+  };
+  if (Object.keys(data).length === 0) return;
+  const { count } = await db.shop.updateMany({ where: { id: shop, uninstalledAt: null }, data });
+  logger.info({ shop, timezone: data.timezone, currency: data.currencyCode, updated: count }, "shop info refreshed");
+};
+
 const getShop = (shop: string) => db.shop.findUnique({ where: { id: shop } });
 
 const isInstalled = async (shop: string) => {
@@ -202,6 +238,7 @@ export {
   saveBranding,
   saveGeneralSettings,
   takeWelcomeBack,
+  updateShopFromWebhook,
   upsertShopOnInstall,
 };
 export type { Branding, GeneralSettings };
