@@ -10,7 +10,8 @@ import { loader } from "./app.quotes.export";
 let SHOP: string;
 let OTHER: string;
 const shopify = fakeShopify();
-vi.mock("../models/actor.server", () => ({ getActor: vi.fn(async () => staff(SHOP, shopify.admin)) }));
+let userId = 1n; // the staff member exporting
+vi.mock("../models/actor.server", () => ({ getActor: vi.fn(async () => staff(SHOP, shopify.admin, "OWNER", userId)) }));
 
 beforeAll(async () => {
   SHOP = (await testShop()).id;
@@ -72,4 +73,21 @@ test("a store that lost B2B still exports, without company names", async () => {
   expect(rows).toHaveLength(2);
   expect(rows[0].company).toBe("");
   expect((await db.shop.findUniqueOrThrow({ where: { id: SHOP } })).b2bUnavailable).toBe(true);
+});
+
+test("M10.2: cost columns only for staff Shopify lets see costs", async () => {
+  const quote = await testQuote(SHOP, { lines: 1 });
+  await db.quoteLine.updateMany({ where: { version: { quoteId: quote.id } }, data: { unitCost: "6" } });
+
+  const rows = (await exportRows("?lines=1")).filter((row) => row.quoteId === quote.id);
+  expect(rows[0]).toMatchObject({ unitCost: "6.00" });
+  expect(rows[0].marginPct).toMatch(/^\d+(\.\d)?$/);
+
+  // Another staff member whose Shopify account can't view product costs.
+  userId = 99n;
+  shopify.failNext("VendoraCanViewCosts", "accessDenied");
+  const hidden = await exportRows("?lines=1");
+  userId = 1n;
+  expect(hidden[0]).not.toHaveProperty("unitCost");
+  expect(hidden[0]).not.toHaveProperty("marginPct");
 });

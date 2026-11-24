@@ -28,7 +28,7 @@ const createRequestedQuote = async (
   source: RequestSource,
 ) => {
   // Shopify first, outside the transaction (see saveDraftLines).
-  const { lines, totals } = await priceLines(admin, location.id, location.currency, input, null);
+  const { lines, totals } = await priceLines(admin, shop, location.id, location.currency, input, null);
   const fromDraft = source.kind === "draftOrder";
 
   await getBoss(); // start pg-boss outside the transaction (see enqueue)

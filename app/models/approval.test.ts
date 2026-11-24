@@ -75,6 +75,7 @@ test("settings form: limits, the empty add-row, switches", () => {
   ]);
   expect(rulesFromForm(form)).toEqual({
     maxDiscountPct: 12.5,
+    minMarginPct: null,
     maxTotalByCurrency: { USD: 5000, CAD: 6750.5 },
     alwaysRequire: false,
     requireDifferentApprover: true,
@@ -90,4 +91,27 @@ test("settings form: a half-filled currency row is rejected when saved", () => {
   const currencyOnly = rulesFromForm(settingsForm([["maxDiscountPct", ""], ["currency", "EUR"], ["maxTotal", ""]]));
   expect(approvalRulesSchema.safeParse(amountOnly).success).toBe(false);
   expect(approvalRulesSchema.safeParse(currencyOnly).success).toBe(false);
+});
+
+// M10.2
+test("margin rule: below the minimum needs approval; unknown margin or no rule doesn't", () => {
+  const margin = (minMarginPct: number | null, marginPct: string | null) =>
+    approvalReasons(
+      { effectiveDiscountPct: D(0), total: D(100) },
+      rules({ minMarginPct, maxTotalByCurrency: { USD: 1000 } }),
+      "USD",
+      marginPct === null ? null : D(marginPct),
+    );
+  // The detail is the limit, not the margin: reasons are shown to staff who may not see costs.
+  expect(margin(20, "15.0")).toEqual([{ code: "MARGIN_UNDER", detail: "20%" }]);
+  expect(margin(20, "20.0")).toEqual([]);
+  expect(margin(20, "25.0")).toEqual([]);
+  expect(margin(20, null)).toEqual([]);
+  expect(margin(null, "1.0")).toEqual([]);
+});
+
+test("margin rule: stored rules without it parse to off; the settings form reads it", () => {
+  expect(parseRules({ maxDiscountPct: 10 }).minMarginPct).toBeNull();
+  expect(rulesFromForm(settingsForm([["maxDiscountPct", ""], ["minMarginPct", "22.5"]])).minMarginPct).toBe(22.5);
+  expect(rulesFromForm(settingsForm([["maxDiscountPct", ""], ["minMarginPct", ""]])).minMarginPct).toBeNull();
 });

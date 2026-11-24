@@ -1,4 +1,4 @@
-import { type Money, ZERO, roundMoney, roundMoneyDown, sum } from "../lib/money";
+import { D, type Money, ZERO, roundMoney, roundMoneyDown, sum } from "../lib/money";
 
 // Pure price math, no server imports, so pages can use it too (M2.8 live totals).
 
@@ -61,6 +61,33 @@ const totals = (
   return { listTotal, subtotal, quoteDiscount, total, discountTotal, effectiveDiscountPct };
 };
 
+// M10.2 margin. Lines without a cost don't count (unknown is not zero). The quote discount is
+// spread over the lines in proportion to their totals.
+type MarginLine = { lineTotal: Money; quantity: number; unitCost: Money | null };
+type Margin = {
+  revenue: Money; // over lines with a cost, after the quote discount
+  cost: Money;
+  marginPct: Money | null; // 1 decimal; null when no line has a cost or revenue is 0
+  linesWithCost: number;
+  lines: number;
+};
+
+const marginOf = (lines: MarginLine[], subtotal: Money, total: Money): Margin => {
+  const share = subtotal.isZero() ? D(1) : total.div(subtotal);
+  let revenue = ZERO;
+  let cost = ZERO;
+  let linesWithCost = 0;
+  for (const line of lines) {
+    if (line.unitCost === null) continue;
+    revenue = revenue.plus(line.lineTotal.mul(share));
+    cost = cost.plus(line.unitCost.mul(line.quantity));
+    linesWithCost += 1;
+  }
+  const marginPct =
+    linesWithCost === 0 || revenue.isZero() ? null : revenue.minus(cost).div(revenue).mul(100).toDecimalPlaces(1);
+  return { revenue, cost, marginPct, linesWithCost, lines: lines.length };
+};
+
 type LineProblem =
   | "QTY_BELOW_MIN"
   | "QTY_ABOVE_MAX"
@@ -105,5 +132,5 @@ const linesKey = (lines: { variantId: string | null; title: string; quantity: nu
     .sort()
     .join("|");
 
-export { BLOCKING, discountPctOf, lineKey, lineTotal, linesKey, quantityProblems, totals, unitPrice };
-export type { LineProblem, PriceBreak, PricedLine, QuantityRule, Totals };
+export { BLOCKING, discountPctOf, lineKey, lineTotal, linesKey, marginOf, quantityProblems, totals, unitPrice };
+export type { LineProblem, Margin, MarginLine, PriceBreak, PricedLine, QuantityRule, Totals };

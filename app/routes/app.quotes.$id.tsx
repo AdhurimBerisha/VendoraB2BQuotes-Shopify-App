@@ -20,7 +20,7 @@ import { ATTENTION_ACTIONS, type AttentionAction, type AttentionCode, attentionI
 import { resolveAttention } from "../models/attention-actions.server";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
-import { BLOCKING, type LineProblem } from "../models/pricing";
+import { BLOCKING, type LineProblem, marginOf } from "../models/pricing";
 import { cancelQuote, getQuote, quoteLabel, setExpiry, setPoNumber } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
@@ -28,6 +28,7 @@ import { requestSync, sendQuote } from "../models/sync.server";
 import { logger } from "../lib/logger.server";
 import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "../models/version.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
+import { canViewCosts } from "../shopify/products.server";
 import { getDraftOrderSummary } from "../shopify/draft-orders.server";
 
 // Shopify data shown on the page; if Shopify fails, the quote still shows.
@@ -54,7 +55,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const money = (value: Money) => formatMoney(value, quote.currencyCode, actor.locale);
   const when = (date: Date) => formatDateTime(date, actor.locale, timezone);
 
-  const [versions, events, staff, pendingApproval, location, contact, draft] = await Promise.all([
+  const [versions, events, staff, pendingApproval, location, contact, draft, seesCosts] = await Promise.all([
     db.quoteVersion.findMany({
       where: { quoteId: quote.id },
       include: { lines: { orderBy: { position: "asc" } } },
@@ -68,7 +69,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     orNull("location", () => getCompanyLocation(actor.admin, quote.companyLocationId)),
     orNull("contact", () => getContact(actor.admin, quote.companyContactId)), // shown, never stored (D-10)
     quote.draftOrderId ? orNull("draft order", () => getDraftOrderSummary(actor.admin, quote.draftOrderId!)) : null,
+    // M10.2: Shopify's "View product costs" decides who sees costs and margins.
+    actor.userId === null ? false : orNull("cost access", () => canViewCosts(actor.admin, actor.shop, actor.userId!.toString())),
   ]);
+  // Costs are in the shop's currency, so only quotes in that currency have a margin (M10.2).
+  const shopCurrency = shop?.currencyCode ?? quote.currencyCode;
+  const showCosts = seesCosts === true && quote.currencyCode === shopCurrency;
+  const margin = version && showCosts ? marginOf(version.lines, version.subtotal, version.total) : null;
   const staffName = (userId: bigint | string | null) =>
     userId === null ? null : (staff.find((member) => member.shopifyUserId.toString() === userId.toString())?.displayName ?? null);
   const address = location?.shippingAddress;
@@ -112,7 +119,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         discountPct: percentText(line.discountPct),
         lineTotal: money(line.lineTotal),
         problems: problemsOf(line.problems),
+        // M10.2, empty unless this staff member may see costs (never sent to the browser otherwise).
+        unitCost: showCosts ? percentText(line.unitCost) : "",
+        cost: showCosts && line.unitCost ? money(line.unitCost) : "",
+        marginPct: (showCosts && marginOf([line], version.subtotal, version.total).marginPct?.toString()) || "",
       })),
+      margin: margin && {
+        pct: margin.marginPct?.toString() ?? null,
+        profit: money(margin.revenue.minus(margin.cost)),
+        linesWithCost: margin.linesWithCost,
+        lines: margin.lines,
+      },
+    },
+    costs: {
+      show: showCosts,
+      // For staff who see costs, on a quote in another currency than the costs.
+      otherCurrency: seesCosts === true && !showCosts ? { costs: shopCurrency, quote: quote.currencyCode } : null,
     },
     customer: {
       company: location?.company.name ?? null,
@@ -209,6 +231,8 @@ const lineSchema = z.union([
         ctx.addIssue({ code: "custom", message: "price required" });
         return z.NEVER;
       }),
+      // M10.2: left out by staff who can't see costs, so the saved cost is kept.
+      cost: optionalDecimal().optional(),
     }),
     quantity: quantitySchema,
     discountPct: optionalDecimal(100),
@@ -407,6 +431,7 @@ export default function QuoteDetail() {
           version={version}
           editable={editable}
           currency={quote.currency}
+          costs={data.costs}
         />
       )}
       {quote.status === "PENDING_APPROVAL" && perms.approve && data.approval && (
@@ -580,6 +605,9 @@ type EditLine = {
   catalogPrice: string; // formatted; "" for lines not saved yet
   lineTotal: string;
   problems: LineProblem[];
+  unitCost: string; // M10.2: a custom line's cost as typed; "" = none
+  cost: string; // formatted, saved lines only
+  marginPct: string; // saved lines only
 };
 
 const quantityError = (value: string) => !/^\d+$/.test(value) || +value < 1 || +value > 100_000;
@@ -596,12 +624,14 @@ function LinesSection({
   version,
   editable,
   currency,
+  costs,
 }: {
   quoteId: string;
   lockVersion: number;
   version: NonNullable<LoaderData["version"]>;
   editable: boolean;
   currency: string;
+  costs: LoaderData["costs"];
 }) {
   const { t } = useTranslation();
   const shopify = useAppBridge();
@@ -631,7 +661,7 @@ function LinesSection({
   // With unsaved edits we keep them, so the next save fails with changedByOther instead of losing them.
   if (lockVersion !== baseLock && !dirty && !conflict) loadLatest();
 
-  const update = (index: number, field: "title" | "quantity" | "overridePrice" | "discountPct", value: string) => {
+  const update = (index: number, field: "title" | "quantity" | "overridePrice" | "discountPct" | "unitCost", value: string) => {
     setLines((current) => current.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
     setDirty(true);
   };
@@ -673,6 +703,9 @@ function LinesSection({
           catalogPrice: "",
           lineTotal: "",
           problems: [],
+          unitCost: "",
+          cost: "",
+          marginPct: "",
         })),
     ]);
     setDirty(true);
@@ -692,6 +725,9 @@ function LinesSection({
         catalogPrice: "",
         lineTotal: "",
         problems: [],
+        unitCost: "",
+        cost: "",
+        marginPct: "",
       },
     ]);
     setDirty(true);
@@ -703,6 +739,7 @@ function LinesSection({
         quantityError(line.quantity) ||
         decimalError(line.overridePrice) ||
         decimalError(line.discountPct, 100) ||
+        decimalError(line.unitCost) ||
         customError(line),
     ) || decimalError(quoteDiscount, 100);
   const save = (basedOn: number) =>
@@ -714,7 +751,12 @@ function LinesSection({
         lines: JSON.stringify(
           lines.map((line) =>
             line.variantId === null
-              ? { custom: { title: line.title, price: line.overridePrice }, quantity: line.quantity, discountPct: line.discountPct }
+              ? {
+                  // Without cost access the cost is left out, so the saved one is kept (M10.2).
+                  custom: { title: line.title, price: line.overridePrice, ...(costs.show ? { cost: line.unitCost } : {}) },
+                  quantity: line.quantity,
+                  discountPct: line.discountPct,
+                }
               : { variantId: line.variantId, quantity: line.quantity, overridePrice: line.overridePrice, discountPct: line.discountPct },
           ),
         ),
@@ -755,6 +797,12 @@ function LinesSection({
               <s-table-header listSlot="labeled" format="currency">
                 {t("quote.lines.lineTotal")}
               </s-table-header>
+              {costs.show && (
+                <s-table-header listSlot="labeled" format="currency">
+                  {t("quote.lines.cost")}
+                </s-table-header>
+              )}
+              {costs.show && <s-table-header listSlot="labeled">{t("quote.lines.margin")}</s-table-header>}
               {editable && <s-table-header listSlot="inline">{t("quote.lines.actions")}</s-table-header>}
             </s-table-header-row>
             <s-table-body>
@@ -842,6 +890,29 @@ function LinesSection({
                     )}
                   </s-table-cell>
                   <s-table-cell>{dirty ? t("quote.lines.afterSave") : line.lineTotal}</s-table-cell>
+                  {costs.show && (
+                    <s-table-cell>
+                      {line.custom && editable ? (
+                        <s-number-field
+                          label={t("quote.lines.costFor", { product: line.title || t("quote.lines.customItem") })}
+                          labelAccessibilityVisibility="exclusive"
+                          value={line.unitCost}
+                          min={0}
+                          step={0.01}
+                          prefix={currency}
+                          error={decimalError(line.unitCost) ? t("quote.lines.priceError") : undefined}
+                          onInput={(event) => update(index, "unitCost", event.currentTarget.value)}
+                        ></s-number-field>
+                      ) : !line.custom && !line.catalogPrice ? (
+                        t("quote.lines.afterSave")
+                      ) : (
+                        line.cost || t("quote.lines.noCost")
+                      )}
+                    </s-table-cell>
+                  )}
+                  {costs.show && (
+                    <s-table-cell>{dirty ? t("quote.lines.afterSave") : line.marginPct ? `${line.marginPct} %` : "—"}</s-table-cell>
+                  )}
                   {editable && (
                     <s-table-cell>
                       <s-button
@@ -882,6 +953,19 @@ function LinesSection({
             <s-text>{t("quote.totals.list", { amount: version.listTotal })}</s-text>
             <s-text>{t("quote.totals.discounts", { amount: version.discountTotal })}</s-text>
             <s-text type="strong">{t("quote.totals.total", { amount: version.total })}</s-text>
+            {version.margin && !dirty && (
+              <s-text>
+                {version.margin.pct === null
+                  ? t("quote.totals.marginNone")
+                  : t("quote.totals.margin", { pct: version.margin.pct, profit: version.margin.profit })}
+                {version.margin.pct !== null && version.margin.linesWithCost < version.margin.lines
+                  ? ` ${t("quote.totals.marginPartial", { count: version.margin.linesWithCost, lines: version.margin.lines })}`
+                  : ""}
+              </s-text>
+            )}
+            {costs.otherCurrency && (
+              <s-text color="subdued">{t("quote.totals.marginOtherCurrency", costs.otherCurrency)}</s-text>
+            )}
             {dirty && <s-text color="subdued">{t("quote.totals.unsaved")}</s-text>}
           </s-stack>
         </s-grid>

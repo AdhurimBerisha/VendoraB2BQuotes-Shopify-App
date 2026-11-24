@@ -130,6 +130,13 @@ export default function Help() {
               </li>
             </ol>
             <div className={styles.tip}>
+              <strong>Margin</strong>Vendora reads each product&apos;s <Ui>Cost per item</Ui> from Shopify and shows
+              the cost and margin per line and for the quote. You can also enter a cost for a custom item. Only staff
+              whose Shopify account may view product costs see them, and they never appear on the PDF, the quote link,
+              the customer account page or emails. Margins are shown for quotes in your store&apos;s currency only,
+              because Shopify keeps costs in that currency.
+            </div>
+            <div className={styles.tip}>
               <strong>Versions</strong>A submitted version is locked. To change it, use <Ui>Revise (new version)</Ui>.
               Vendora keeps every version with its own PDF and shows what changed.
             </div>
@@ -201,6 +208,10 @@ export default function Help() {
             </p>
             <ul>
               <li>Its discount, compared with the catalog total, is above the maximum discount.</li>
+              <li>
+                Its margin is below the minimum margin (if you set one). Only quotes in your store&apos;s currency are
+                checked, and lines without a cost don&apos;t count.
+              </li>
               <li>Its total is above the maximum for its currency. A currency without a limit always needs approval.</li>
               <li>
                 <Ui>Always require approval</Ui> is on.

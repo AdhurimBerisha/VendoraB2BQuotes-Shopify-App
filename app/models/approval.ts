@@ -7,6 +7,7 @@ import { D, type Money, formatMoney } from "../lib/money";
 // (Snowdevil buys in CAD from a USD shop). A currency without a limit always needs approval.
 const approvalRulesSchema = z.object({
   maxDiscountPct: z.number().min(0).max(100).nullable(), // null = no discount limit
+  minMarginPct: z.number().min(0).max(100).nullable(), // M10.2; null = no margin rule
   maxTotalByCurrency: z.record(z.string().regex(/^[A-Z]{3}$/), z.number().min(0)),
   alwaysRequire: z.boolean(),
   requireDifferentApprover: z.boolean(), // the requester can't approve their own quote
@@ -15,6 +16,7 @@ type ApprovalRules = z.infer<typeof approvalRulesSchema>;
 
 const DEFAULT_RULES: ApprovalRules = {
   maxDiscountPct: 15,
+  minMarginPct: null,
   maxTotalByCurrency: {},
   alwaysRequire: false,
   requireDifferentApprover: true,
@@ -31,14 +33,17 @@ const parseRules = (json: unknown): ApprovalRules => {
 };
 
 type ApprovalReason = {
-  code: "ALWAYS" | "DISCOUNT_OVER" | "TOTAL_OVER" | "NO_THRESHOLD_FOR_CURRENCY";
+  code: "ALWAYS" | "DISCOUNT_OVER" | "MARGIN_UNDER" | "TOTAL_OVER" | "NO_THRESHOLD_FOR_CURRENCY";
   detail?: string;
 };
 
+// marginPct: the quote's margin (M10.2), null when unknown (no costs, or a quote in another currency
+// than the shop's): the margin rule then doesn't apply.
 const approvalReasons = (
   totals: { effectiveDiscountPct: Money; total: Money },
   rules: ApprovalRules,
   currency: string,
+  marginPct: Money | null = null,
 ): ApprovalReason[] => {
   const reasons: ApprovalReason[] = [];
   if (rules.alwaysRequire) reasons.push({ code: "ALWAYS" });
@@ -47,6 +52,10 @@ const approvalReasons = (
       code: "DISCOUNT_OVER",
       detail: `${totals.effectiveDiscountPct.toFixed(1)}% > ${rules.maxDiscountPct}%`,
     });
+  }
+  if (rules.minMarginPct !== null && marginPct !== null && marginPct.lt(rules.minMarginPct)) {
+    // The limit only, not the margin itself: reasons are shown to staff who may not see costs.
+    reasons.push({ code: "MARGIN_UNDER", detail: `${rules.minMarginPct}%` });
   }
   const maxTotal = rules.maxTotalByCurrency[currency];
   if (maxTotal === undefined) {
@@ -63,6 +72,7 @@ const optionalNumber = z.preprocess((value) => (value === "" ? null : value), z.
 const rulesFormSchema = z.object({
   intent: z.literal("saveApprovalRules"),
   maxDiscountPct: optionalNumber,
+  minMarginPct: optionalNumber.optional(), // a form without the field keeps no margin rule
   currency: z.array(z.string()),
   maxTotal: z.array(z.string()),
   alwaysRequire: z.literal("on").optional(),
@@ -85,6 +95,7 @@ const rulesFromForm = (form: FormData): ApprovalRules => {
   });
   return {
     maxDiscountPct: input.maxDiscountPct,
+    minMarginPct: input.minMarginPct ?? null,
     maxTotalByCurrency,
     alwaysRequire: input.alwaysRequire === "on",
     requireDifferentApprover: input.requireDifferentApprover === "on",

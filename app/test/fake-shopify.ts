@@ -43,6 +43,8 @@ type FakeVariant = {
   quantityRule?: { minimum: number; maximum: number | null; increment: number };
   priceBreaks?: { minimumQuantity: number; price: string }[];
   inventoryQuantity?: number | null;
+  cost?: string; // M10.2: inventoryItem.unitCost, in the shop's currency (USD unless costCurrency)
+  costCurrency?: string;
 };
 
 // The VendoraVariantPrices node for a variant at the company location.
@@ -256,6 +258,19 @@ const fakeShopify = ({
         .map(([id, variant]) => ({ id, sku: variantNode(id, variant).sku }))
         .filter(({ sku }) => terms.has(sku.toLowerCase()));
       return Response.json({ data: { productVariants: { nodes } } });
+    }
+    if (query.includes("VendoraUnitCosts")) {
+      const nodes = (variables.ids as string[]).map((id) => {
+        const variant = variants[id];
+        if (!variant) return null;
+        const unitCost = variant.cost ? { amount: variant.cost, currencyCode: variant.costCurrency ?? "USD" } : null;
+        return { id, inventoryItem: { unitCost } };
+      });
+      return Response.json({ data: { nodes } });
+    }
+    if (query.includes("VendoraCanViewCosts")) {
+      // failNext("VendoraCanViewCosts", "accessDenied") = a staff member without "View product costs".
+      return Response.json({ data: { productVariants: { nodes: [] } } });
     }
     if (query.includes("VendoraVariantPrices")) {
       // Without the country, Shopify ignores the location's market (see getLocationCountry).
