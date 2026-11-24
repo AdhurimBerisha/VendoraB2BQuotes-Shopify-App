@@ -3,7 +3,9 @@ import { Prisma, type QuoteLine } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { D, type Money } from "../lib/money";
-import { getVariantPrices, type VariantPrice } from "../shopify/products.server";
+import { ShopifyDenied } from "../shopify/client.server";
+import { getUnitCosts, getVariantPrices, type VariantPrice } from "../shopify/products.server";
+import { unauthenticated } from "../shopify.server";
 import type { StaffActor } from "./actor";
 import { withoutItems } from "./attention";
 import { audit } from "./audit.server";
@@ -12,16 +14,21 @@ import { type LineProblem, type PricedLine, lineKey, lineTotal, quantityProblems
 import { insertQuote, quoteFields, transition } from "./quote.server";
 
 // What staff choose per line. Catalog lines are priced from Shopify for the quote's company
-// location; custom lines (freight, fees, services; M9.2) carry their own title and unit price.
+// location; custom lines (freight, fees, services; M9.2) carry their own title, unit price and
+// optional unit cost (M10.2).
 type DraftLineInput =
   | { variantId: string; quantity: number; overridePrice?: Money | null; discountPct?: Money | null }
-  | { custom: { title: string; price: Money }; quantity: number; discountPct?: Money | null };
+  | { custom: { title: string; price: Money; cost?: Money | null }; quantity: number; discountPct?: Money | null };
 
 // A saved line back to input (refresh, duplicate, import, keeping Shopify's version).
 const toLineInput = (line: QuoteLine): DraftLineInput =>
   line.variantId
     ? { variantId: line.variantId, quantity: line.quantity, overridePrice: line.overridePrice, discountPct: line.discountPct }
-    : { custom: { title: line.titleSnapshot, price: line.catalogPrice }, quantity: line.quantity, discountPct: line.discountPct };
+    : {
+        custom: { title: line.titleSnapshot, price: line.catalogPrice, cost: line.unitCost },
+        quantity: line.quantity,
+        discountPct: line.discountPct,
+      };
 
 const lineProblems = (
   price: VariantPrice,
@@ -42,10 +49,24 @@ const lineProblems = (
 const lineTitle = (price: VariantPrice) =>
   price.title === "Default Title" ? price.productTitle : `${price.productTitle} – ${price.title}`;
 
+// M10.2: unit costs with the staff member's token; if Shopify won't show them costs, with the shop's
+// offline token, so their saves still keep the costs that managers see.
+const unitCostsFor = async (admin: StaffActor["admin"], shop: string, variantIds: string[]) => {
+  if (variantIds.length === 0) return new Map<string, { amount: string; currencyCode: string }>();
+  try {
+    return await getUnitCosts(admin, variantIds);
+  } catch (error) {
+    if (!(error instanceof ShopifyDenied)) throw error;
+    const { admin: offline } = await unauthenticated.admin(shop);
+    return getUnitCosts(offline, variantIds);
+  }
+};
+
 // Prices lines at the company location (Shopify, so call it outside any transaction).
 // skipMissing drops lines whose variant was deleted instead of failing (duplicating an old quote).
 const priceLines = async (
   admin: StaffActor["admin"],
+  shop: string,
   companyLocationId: string,
   currency: string,
   input: DraftLineInput[],
@@ -54,12 +75,14 @@ const priceLines = async (
 ) => {
   const variantIds = [...new Set(input.flatMap((line) => ("variantId" in line ? [line.variantId] : [])))];
   const prices = await getVariantPrices(admin, variantIds, companyLocationId);
+  const costs = await unitCostsFor(admin, shop, variantIds);
   const found = skipMissing ? input.filter((line) => !("variantId" in line) || prices.has(line.variantId)) : input;
   const lines = found.map((line) => {
     if ("custom" in line) {
       // No catalog, stock or quantity rules: the entered price is the list price.
       const priced: PricedLine = { quantity: line.quantity, catalogPrice: line.custom.price, discountPct: line.discountPct ?? null };
-      return { kind: "custom" as const, title: line.custom.title, priced, problems: [] as LineProblem[] };
+      const unitCost = line.custom.cost ?? null;
+      return { kind: "custom" as const, title: line.custom.title, priced, unitCost, problems: [] as LineProblem[] };
     }
     const price = prices.get(line.variantId);
     if (!price) throw new UserError("quote.errors.variantNotFound", { variantId: line.variantId });
@@ -73,7 +96,10 @@ const priceLines = async (
         price: D(priceBreak.price),
       })),
     };
-    return { kind: "catalog" as const, price, priced, problems: lineProblems(price, line.quantity, currency) };
+    // Costs are in the shop's currency: a quote in another currency has no margin (M10.2).
+    const cost = costs.get(line.variantId);
+    const unitCost = cost && cost.currencyCode === currency ? D(cost.amount) : null;
+    return { kind: "catalog" as const, price, priced, unitCost, problems: lineProblems(price, line.quantity, currency) };
   });
   return { lines, totals: totals(lines.map((line) => line.priced), quoteDiscountPct, currency) };
 };
@@ -94,6 +120,7 @@ const lineRows = (versionId: string, lines: PricedLines["lines"], currency: stri
       quantity: priced.quantity,
       catalogPrice: priced.catalogPrice,
       overridePrice: priced.overridePrice ?? null,
+      unitCost: line.unitCost,
       discountPct: priced.discountPct ?? null,
       lineTotal: lineTotal(priced, currency),
       problems: problems.length ? problems : undefined,
@@ -110,16 +137,28 @@ const saveDraftLines = async (
   quoteDiscountPct: Money | null,
 ) => {
   requirePermission(actor, "quote.edit");
-  const found = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
+  const found = await db.quote.findFirst({
+    where: { id: quoteId, shop: actor.shop },
+    include: { currentVersion: { include: { lines: { where: { variantId: null } } } } },
+  });
   if (!found) throw new NotFoundError();
   const currency = found.currencyCode;
+
+  // M10.2: a custom line sent without a cost (by staff who can't see costs) keeps its saved cost.
+  const savedCosts = new Map((found.currentVersion?.lines ?? []).map((line) => [line.titleSnapshot, line.unitCost]));
+  const withCosts = input.map((line): DraftLineInput =>
+    "custom" in line && line.custom.cost === undefined
+      ? { ...line, custom: { ...line.custom, cost: savedCosts.get(line.custom.title) ?? null } }
+      : line,
+  );
 
   // Shopify first, outside the transaction, so a slow API call doesn't hold database locks.
   const { lines, totals: quoteTotals } = await priceLines(
     actor.admin,
+    actor.shop,
     found.companyLocationId,
     currency,
-    input,
+    withCosts,
     quoteDiscountPct,
   );
   logger.info({
@@ -239,6 +278,7 @@ const reviseQuote = async (actor: StaffActor, quoteId: string) => {
             quantity: line.quantity,
             catalogPrice: line.catalogPrice,
             overridePrice: line.overridePrice,
+            unitCost: line.unitCost,
             discountPct: line.discountPct,
             lineTotal: line.lineTotal,
             problems: line.problems ?? undefined,
@@ -283,6 +323,7 @@ const duplicateQuote = async (actor: StaffActor, sourceId: string) => {
   });
   const { lines, totals: quoteTotals } = await priceLines(
     actor.admin,
+    actor.shop,
     fields.companyLocationId,
     fields.currencyCode,
     input,

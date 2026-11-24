@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import db from "../db.server";
 import { ConflictError, ForbiddenError } from "../lib/errors";
 import { D } from "../lib/money";
@@ -13,6 +13,12 @@ import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "./ver
 const VARIANT = "gid://shopify/ProductVariant/1";
 const variants: Record<string, FakeVariant> = { [VARIANT]: { price: "100.00" } };
 const shopify = fakeShopify({ variants });
+
+// M10.2: costs fall back to the shop's offline token when the staff member's is refused.
+vi.mock("../shopify.server", async (original) => ({
+  ...(await original<typeof import("../shopify.server")>()),
+  unauthenticated: { admin: async () => ({ admin: shopify.admin }) },
+}));
 
 let SHOP: string;
 const rep = () => staff(SHOP, shopify.admin, "REP", 1n);
@@ -368,4 +374,72 @@ test("diffVersions: added, removed and changed lines; unchanged lines left out",
     },
     { key: "D", title: "Title D", change: "added", after: { quantity: 1, unitPrice: "10", discountPct: null, lineTotal: "10" } },
   ]);
+});
+
+// M10.2 margin
+const savedLines = async (quoteId: string) =>
+  (await getQuote(SHOP, quoteId)).currentVersion!.lines.map((line) => ({
+    variantId: line.variantId,
+    unitCost: line.unitCost?.toString() ?? null,
+  }));
+
+test("costs: stored at save, kept by revise; another cost currency is unknown", async () => {
+  variants[VARIANT] = { price: "100.00", cost: "60.00" };
+  const id = await draftQuote();
+  expect(await savedLines(id)).toEqual([{ variantId: VARIANT, unitCost: "60" }]);
+
+  await submitQuote(rep(), id);
+  await reviseQuote(rep(), id);
+  expect(await savedLines(id)).toEqual([{ variantId: VARIANT, unitCost: "60" }]);
+
+  variants[VARIANT] = { price: "100.00", cost: "60.00", costCurrency: "EUR" };
+  const other = await draftQuote();
+  expect(await savedLines(other)).toEqual([{ variantId: VARIANT, unitCost: null }]);
+});
+
+test("costs: a staff member Shopify won't show costs to still saves them (offline token)", async () => {
+  variants[VARIANT] = { price: "100.00", cost: "60.00" };
+  const before = shopify.callsOf("VendoraUnitCosts");
+  shopify.failNext("VendoraUnitCosts", "accessDenied");
+  const id = await draftQuote();
+  expect(shopify.callsOf("VendoraUnitCosts") - before).toBe(2); // refused, then the offline token
+  expect(await savedLines(id)).toEqual([{ variantId: VARIANT, unitCost: "60" }]);
+});
+
+test("custom line cost: saved as entered; a save without it keeps the saved one", async () => {
+  const quote = await createQuote(rep(), { locationId: "gid://shopify/CompanyLocation/1" });
+  const freight = (cost?: string | null) => ({
+    custom: { title: "Freight", price: D("50"), ...(cost === undefined ? {} : { cost: cost === null ? null : D(cost) }) },
+    quantity: 1,
+  });
+  await saveDraftLines(rep(), quote.id, 0, [freight("30")], null);
+  expect(await savedLines(quote.id)).toEqual([{ variantId: null, unitCost: "30" }]);
+
+  let lock = (await getQuote(SHOP, quote.id)).lockVersion;
+  await saveDraftLines(rep(), quote.id, lock, [freight()], null); // left out: kept
+  expect(await savedLines(quote.id)).toEqual([{ variantId: null, unitCost: "30" }]);
+
+  lock = (await getQuote(SHOP, quote.id)).lockVersion;
+  await saveDraftLines(rep(), quote.id, lock, [freight(null)], null); // cleared
+  expect(await savedLines(quote.id)).toEqual([{ variantId: null, unitCost: null }]);
+});
+
+test("margin rule: a quote below the minimum margin waits for a manager", async () => {
+  await saveApprovalRules(owner(), { ...DEFAULT_RULES, maxTotalByCurrency: { USD: 10000 }, minMarginPct: 30 });
+  try {
+    variants[VARIANT] = { price: "100.00", cost: "80.00" }; // 20 % margin
+    const low = await draftQuote();
+    expect(await submitQuote(rep(), low)).toEqual({
+      needsApproval: true,
+      reasons: [{ code: "MARGIN_UNDER", detail: "30%" }],
+    });
+
+    variants[VARIANT] = { price: "100.00", cost: "50.00" }; // 50 %
+    expect((await submitQuote(rep(), await draftQuote())).needsApproval).toBe(false);
+
+    variants[VARIANT] = { price: "100.00" }; // no cost: the rule doesn't apply
+    expect((await submitQuote(rep(), await draftQuote())).needsApproval).toBe(false);
+  } finally {
+    await saveApprovalRules(owner(), { ...DEFAULT_RULES, maxTotalByCurrency: { USD: 10000 } });
+  }
 });

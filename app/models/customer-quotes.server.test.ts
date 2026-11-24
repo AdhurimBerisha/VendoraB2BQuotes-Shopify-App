@@ -98,6 +98,7 @@ test("lists only the buyer's companies' sent and closed quotes, without internal
   expect(first?.pdfUrl).toMatch(/\/q\/[^/]+\/pdf$/);
   expect(Object.keys(first ?? {})).not.toContain("internalNote");
   expect(Object.keys(first ?? {})).not.toContain("attention");
+  expect(JSON.stringify(quotes)).not.toMatch(/unitCost|margin/i); // M10.2: costs never reach the buyer
   expect(await listCustomerQuotes(SHOP, [])).toEqual([]);
 });
 

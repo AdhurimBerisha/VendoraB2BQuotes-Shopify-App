@@ -58,6 +58,7 @@ const manageData = (
       quoteFooter: shop?.quoteFooter ?? "",
     },
     rules: parseRules(shop?.approvalRules),
+    shopCurrency: shop?.currencyCode ?? "USD", // M10.2: costs, and so margins, are in this currency
     staff: staff.map((member) => ({
       id: member.id,
       name: member.displayName,
@@ -152,7 +153,7 @@ function NotificationsSection({
 }
 
 function ManageSections({ manage }: { manage: ManageData }) {
-  const { general, branding, staff, rules } = manage;
+  const { general, branding, staff, rules, shopCurrency } = manage;
   const { t } = useTranslation();
 
   return (
@@ -175,7 +176,7 @@ function ManageSections({ manage }: { manage: ManageData }) {
           </s-table-body>
         </s-table>
       </s-section>
-      <ApprovalRulesSection rules={rules} />
+      <ApprovalRulesSection rules={rules} shopCurrency={shopCurrency} />
       <ExportSection />
     </>
   );
@@ -318,7 +319,7 @@ function BrandingSection({ branding }: { branding: ManageData["branding"] }) {
   );
 }
 
-function ApprovalRulesSection({ rules }: { rules: ApprovalRules }) {
+function ApprovalRulesSection({ rules, shopCurrency }: { rules: ApprovalRules; shopCurrency: string }) {
   const fetcher = useFetcher<typeof action>();
   const { t } = useTranslation();
   // Existing limits plus one empty row to add a currency. Clear both fields to remove one.
@@ -335,6 +336,15 @@ function ApprovalRulesSection({ rules }: { rules: ApprovalRules }) {
             details={t("settings.approvals.maxDiscountHelp")}
             name="maxDiscountPct"
             value={rules.maxDiscountPct === null ? "" : String(rules.maxDiscountPct)}
+            min={0}
+            max={100}
+            step={0.1}
+          ></s-number-field>
+          <s-number-field
+            label={t("settings.approvals.minMargin")}
+            details={t("settings.approvals.minMarginHelp", { currency: shopCurrency })}
+            name="minMarginPct"
+            value={rules.minMarginPct === null ? "" : String(rules.minMarginPct)}
             min={0}
             max={100}
             step={0.1}

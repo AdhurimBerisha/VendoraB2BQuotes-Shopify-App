@@ -132,6 +132,10 @@
       "priceError": "Amount like 12.50",
       "discountError": "Percent from 0 to 100",
       "afterSave": "After saving",
+      "cost": "Cost",
+      "costFor": "Cost for {{product}}",
+      "noCost": "No cost in Shopify",
+      "margin": "Margin",
       "quoteDiscount": "Quote discount (%)",
       "quoteDiscountValue": "Quote discount: {{value}} %",
       "add": "Add products",
@@ -152,7 +156,11 @@
       "list": "Catalog total: {{amount}}",
       "discounts": "Discounts: {{amount}}",
       "total": "Total before tax and shipping: {{amount}}",
-      "unsaved": "Unsaved changes: totals update when you save."
+      "unsaved": "Unsaved changes: totals update when you save.",
+      "margin": "Margin: {{pct}} % ({{profit}} profit)",
+      "marginNone": "Margin: no product costs in Shopify",
+      "marginPartial": "over {{count}} of {{lines}} lines; the others have no cost",
+      "marginOtherCurrency": "Margin not available: product costs are in {{costs}}, this quote is in {{quote}}."
     },
     "approval": {
       "title": "Approval",
@@ -265,6 +273,7 @@
     "reasons": {
       "ALWAYS": "All quotes need approval",
       "DISCOUNT_OVER": "Discount {{detail}}",
+      "MARGIN_UNDER": "Margin below {{detail}}",
       "TOTAL_OVER": "Total {{detail}}",
       "NO_THRESHOLD_FOR_CURRENCY": "No approval limit set for {{detail}}",
       "LINE_PRICE_OVERRIDE_BELOW_CATALOG": "A line is priced below the catalog {{detail}}"
@@ -528,6 +537,8 @@
       "help": "A submitted quote needs a manager's approval when it breaks any of these rules. Quotes in a currency without a limit always need approval.",
       "maxDiscount": "Maximum discount without approval (%)",
       "maxDiscountHelp": "Compared with the catalog price total. Leave empty for no limit.",
+      "minMargin": "Minimum margin without approval (%)",
+      "minMarginHelp": "From the product costs in Shopify. Only quotes in {{currency}} (your costs' currency) are checked, and lines without a cost don't count. Leave empty for no limit.",
       "maxTotalTitle": "Maximum quote total per currency",
       "currency": "Currency",
       "currencyHelp": "Add a currency, e.g. CAD",

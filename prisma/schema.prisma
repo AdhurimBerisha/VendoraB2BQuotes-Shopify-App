@@ -105,6 +105,7 @@ model QuoteLine {
   quantity      Int
   catalogPrice  Decimal      @db.Decimal(14, 4) // custom line: the price staff entered
   overridePrice Decimal?     @db.Decimal(14, 4)
+  unitCost      Decimal?     @db.Decimal(14, 4) // M10.2: cost per unit at save time, quote currency; null = unknown (no cost in Shopify, or another currency)
   discountPct   Decimal?     @db.Decimal(7, 4)
   lineTotal     Decimal      @db.Decimal(14, 4)
   problems      Json?

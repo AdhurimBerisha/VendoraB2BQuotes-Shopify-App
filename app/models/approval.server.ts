@@ -7,7 +7,7 @@ import { getBoss } from "../jobs/queue.server";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
 import { requirePermission } from "./permissions";
-import { BLOCKING, type LineProblem, discountPctOf } from "./pricing";
+import { BLOCKING, type LineProblem, discountPctOf, marginOf } from "./pricing";
 import { transition } from "./quote.server";
 import { refreshPrices } from "./version.server";
 
@@ -36,10 +36,14 @@ const submitQuote = async (actor: StaffActor, quoteId: string) => {
     }
 
     const shop = await tx.shop.findUniqueOrThrow({ where: { id: actor.shop } });
+    // Costs are in the shop's currency, so only a quote in that currency has a margin (M10.2).
+    const margin =
+      quote.currencyCode === shop.currencyCode ? marginOf(version.lines, version.subtotal, version.total).marginPct : null;
     const reasons = approvalReasons(
       { effectiveDiscountPct: discountPctOf(version.listTotal, version.discountTotal), total: version.total },
       parseRules(shop.approvalRules),
       quote.currencyCode,
+      margin,
     );
 
     // The status change is the atomic step: of two submits at once, only one gets past it.

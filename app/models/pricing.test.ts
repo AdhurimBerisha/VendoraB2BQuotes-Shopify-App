@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { D } from "../lib/money";
-import { type PricedLine, lineTotal, quantityProblems, totals, unitPrice } from "./pricing";
+import { type PricedLine, lineTotal, marginOf, quantityProblems, totals, unitPrice } from "./pricing";
 
 const breaks = [
   { minimumQuantity: 10, price: D("45.00") },
@@ -90,3 +90,38 @@ test("discounts round down and unit prices round first, like the draft order", (
   expect(lineTotal({ quantity: 10, catalogPrice: D(2), overridePrice: D("1.2345") }, "CAD").toFixed(2)).toBe("12.30");
 });
 
+
+// M10.2: two lines, 100 × 1 at cost 60 and 50 × 2 at cost 20 → revenue 200, cost 100.
+const costed = [
+  { lineTotal: D(100), quantity: 1, unitCost: D(60) },
+  { lineTotal: D(100), quantity: 2, unitCost: D(20) },
+];
+
+test("margin: (revenue − cost) / revenue", () => {
+  const margin = marginOf(costed, D(200), D(200));
+  expect(margin.revenue.toString()).toBe("200");
+  expect(margin.cost.toString()).toBe("100");
+  expect(margin.marginPct?.toString()).toBe("50");
+});
+
+test("margin: the quote discount lowers revenue (10 %: 180 − 100 = 44.4 %)", () => {
+  const margin = marginOf(costed, D(200), D(180));
+  expect(margin.revenue.toString()).toBe("180");
+  expect(margin.marginPct?.toString()).toBe("44.4");
+});
+
+test("margin: lines without a cost don't count", () => {
+  const margin = marginOf([...costed, { lineTotal: D(500), quantity: 1, unitCost: null }], D(700), D(700));
+  expect(margin.marginPct?.toString()).toBe("50");
+  expect(margin).toMatchObject({ linesWithCost: 2, lines: 3 });
+});
+
+test("margin: none without costs or revenue", () => {
+  expect(marginOf([{ lineTotal: D(100), quantity: 1, unitCost: null }], D(100), D(100)).marginPct).toBeNull();
+  expect(marginOf([{ lineTotal: D(0), quantity: 1, unitCost: D(5) }], D(0), D(0)).marginPct).toBeNull();
+  expect(marginOf([], D(0), D(0)).marginPct).toBeNull();
+});
+
+test("margin: selling below cost is negative", () => {
+  expect(marginOf([{ lineTotal: D(80), quantity: 1, unitCost: D(100) }], D(80), D(80)).marginPct?.toString()).toBe("-25");
+});
