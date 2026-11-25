@@ -69,6 +69,8 @@
       "save": "Save date"
     },
     "expires": "Expires {{date}}",
+    "views": "Viewed {{count}}× · last {{at}}",
+    "notViewed": "Not opened yet",
     "status": {
       "DRAFT": "Draft",
       "PENDING_APPROVAL": "Pending approval",
@@ -236,6 +238,8 @@
       "expired": "the quote expired",
       "expiry_changed": "changed the expiry date",
       "expiry_reminded": "sent the expiry reminder",
+      "viewed": "opened the quote",
+      "follow_up": "sent a follow-up reminder",
       "declined": "the buyer declined the quote",
       "changes_requested": "the buyer asked for changes",
       "po_number_set": "set the PO number"
@@ -338,6 +342,7 @@
       "privacy": "Privacy request",
       "send-email": "Email",
       "expire-quotes": "Expire quotes",
+      "follow-ups": "Follow-up reminders",
       "reconcile-all": "Nightly check (all shops)",
       "reconcile": "Nightly check with Shopify"
     }
@@ -486,6 +491,8 @@
         "quoteViewed": "A buyer opened my quote",
         "quoteOrdered": "A buyer ordered my quote",
         "expiringSoon": "My quote expires in 3 days",
+        "followUpNotViewed": "My sent quote wasn't opened (follow-up setting)",
+        "followUpNotOrdered": "My opened quote wasn't ordered (follow-up setting)",
         "needsAttention": "A quote needs attention (managers)",
         "quoteDeclined": "A buyer declined my quote",
         "changesRequested": "A buyer asked for changes to my quote",
@@ -504,6 +511,9 @@
       "nextNumber": "Next quote number",
       "nextNumberHelp": "Can only go up, so numbers are never reused.",
       "expiryDays": "Quotes expire after (days)",
+      "followUpNotViewedDays": "Remind the rep when a sent quote isn't opened after (days)",
+      "followUpNotOrderedDays": "Remind the rep when an opened quote isn't ordered after (days)",
+      "followUpHelp": "Empty = off. Counted in the shop's time zone; once per send.",
       "reserveInventory": "Reserve stock while a quote is open",
       "reserveInventoryHelp": "Draft orders hold the items until the quote expires.",
       "importSubmittedDrafts": "Turn company draft orders into quotes",
@@ -557,6 +567,8 @@
     "quoteViewed": { "subject": "Viewed: {{quoteLabel}}", "body": "The buyer opened {{quoteLabel}}.", "action": "Open quote" },
     "quoteOrdered": { "subject": "Ordered: {{quoteLabel}}", "body": "The buyer completed checkout for {{quoteLabel}}.", "action": "Open quote" },
     "expiringSoon": { "subject": "Expires {{date}}: {{quoteLabel}}", "body": "{{quoteLabel}} expires on {{date}}. Extend the date or follow up with the buyer.", "action": "Open quote" },
+    "followUpNotViewed": { "subject": "Not opened yet: {{quoteLabel}}", "body": "{{quoteLabel}} was sent on {{date}} and the buyer hasn't opened it yet. A quick call or email may help.", "action": "Open quote" },
+    "followUpNotOrdered": { "subject": "Opened, not ordered: {{quoteLabel}}", "body": "The buyer opened {{quoteLabel}} on {{date}} but hasn't ordered yet. Follow up while it's fresh.", "action": "Open quote" },
     "needsAttention": { "subject": "Needs attention: {{quoteLabel}}", "body": "Something on {{quoteLabel}} needs a person to look at it. Open the quote to see what to fix.", "action": "Open quote" },
     "quoteDeclined": { "subject": "Declined: {{quoteLabel}}", "body": "The buyer declined {{quoteLabel}}. Their reason:", "action": "Open quote" },
     "changesRequested": { "subject": "Changes requested: {{quoteLabel}}", "body": "The buyer asked for changes to {{quoteLabel}}. Start a new version to answer them. Their message:", "action": "Open quote" },

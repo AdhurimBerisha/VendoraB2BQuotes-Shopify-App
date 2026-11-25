@@ -19,7 +19,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return data({ superseded, label, version: version.versionNumber, quote: null }, { headers: PUBLIC_HEADERS });
   }
 
-  await recordView(quote, version.versionNumber);
+  await recordView(quote, version.versionNumber, "page");
   const money = (value: Parameters<typeof formatMoney>[0]) => formatMoney(value, quote.currencyCode, LOCALE);
   // Customer-visible data only: no internal notes, rep ids or attention items.
   return data(

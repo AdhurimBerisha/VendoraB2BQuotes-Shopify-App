@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import db from "../../db.server";
+import { enqueue } from "../../jobs/queue.server";
 import { signQuoteToken } from "../../lib/signed-token.server";
 import { redactShop } from "../../models/privacy.server";
+import { recordView } from "../../models/public-quote.server";
 import { testQuote, testShop } from "../../test/factories";
 import { action, loader } from "./route";
+
+vi.mock("../../jobs/queue.server", () => ({ enqueue: vi.fn(async () => "job-id"), getBoss: vi.fn(async () => ({})) }));
+const enqueueMock = vi.mocked(enqueue);
 
 let SHOP_A: string;
 let SHOP_B: string;
@@ -44,7 +49,7 @@ const statusOf = async (promise: Promise<unknown>) => {
 const views = (shop: string, quoteId: string) =>
   db.auditEvent.count({ where: { shop, quoteId, action: "quote.viewed" } });
 
-test("valid token: lines shown, viewed logged once per day", async () => {
+test("valid token: lines shown, viewed logged once per hour", async () => {
   const quote = await testQuote(SHOP_A, { lines: 2, overrides: { status: "SENT", invoiceUrl: "https://shop.test/invoice" } });
   const token = tokenFor(SHOP_A, quote.id);
 
@@ -56,6 +61,41 @@ test("valid token: lines shown, viewed logged once per day", async () => {
   expect(result.data.quote?.invoiceUrl).toBe("https://shop.test/invoice");
   expect(result.init?.headers).toMatchObject({ "X-Robots-Tag": "noindex", "Referrer-Policy": "same-origin" });
   expect(await views(SHOP_A, quote.id)).toBe(1);
+});
+
+test("M10.3: one view per hour, the rep's email at most once a day; source stored", async () => {
+  const REP = 77n;
+  await db.staffMember.create({ data: { shop: SHOP_A, shopifyUserId: REP, displayName: "Rep", email: "rep@shop.test" } });
+  const quote = await testQuote(SHOP_A, { overrides: { status: "SENT", assignedToUserId: REP } });
+  const HOUR = 3_600_000;
+  // Moves the views recorded so far back in time (createdAt comes from the database clock).
+  const age = async (ms: number) => {
+    const events = await db.auditEvent.findMany({ where: { quoteId: quote.id, action: "quote.viewed" } });
+    for (const event of events) {
+      await db.auditEvent.update({ where: { id: event.id }, data: { createdAt: new Date(event.createdAt.getTime() - ms) } });
+    }
+  };
+  const emails = () =>
+    enqueueMock.mock.calls.filter(([queue, data]) => queue === "send-email" && (data as { type: string }).type === "quoteViewed").length;
+  enqueueMock.mockClear();
+
+  await recordView(quote, 1, "page");
+  await recordView(quote, 1, "pdf"); // same hour: ignored
+  expect(await views(SHOP_A, quote.id)).toBe(1);
+  expect(emails()).toBe(1);
+
+  await age(2 * HOUR);
+  await recordView(quote, 1, "pdf"); // new event, but emailed within the day already
+  expect(await views(SHOP_A, quote.id)).toBe(2);
+  expect(emails()).toBe(1);
+
+  await age(25 * HOUR);
+  await recordView(quote, 1, "account"); // no view in the last day: email again
+  expect(await views(SHOP_A, quote.id)).toBe(3);
+  expect(emails()).toBe(2);
+
+  const sources = await db.auditEvent.findMany({ where: { quoteId: quote.id, action: "quote.viewed" }, orderBy: { createdAt: "asc" } });
+  expect(sources.map((event) => (event.data as { source: string }).source)).toEqual(["page", "pdf", "account"]);
 });
 
 const accept = (token: string, poNumber: string) =>

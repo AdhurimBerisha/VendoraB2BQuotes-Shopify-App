@@ -7,6 +7,7 @@ import type { SendEmailJob } from "../models/notify.server";
 import { type SendInvoiceJob, type SyncJob, giveUpInvoice, giveUpSync } from "../models/sync.server";
 import type { FlowTriggerJob } from "../models/flow.server";
 import { runExpireQuotes } from "./expire-quotes.server";
+import { runFollowUps } from "./follow-ups.server";
 import { runFlowTrigger } from "./flow-trigger.server";
 import { runReconcileAll, runReconcileShop } from "./reconcile.server";
 import { type ImportCsvJob, runImportCsv } from "./import-csv.server";
@@ -61,6 +62,8 @@ const startWorkers = async () => {
   await boss.work<ImportCsvJob>("import-csv", one, handle("import-csv", (job) => runImportCsv(job.data)));
   await boss.work("expire-quotes", one, handle("expire-quotes", () => runExpireQuotes()));
   await boss.schedule("expire-quotes", "0 * * * *"); // upsert: safe on every start
+  await boss.work("follow-ups", one, handle("follow-ups", () => runFollowUps()));
+  await boss.schedule("follow-ups", "30 * * * *"); // M10.3, half past, away from expire-quotes
   await boss.work("reconcile-all", one, handle("reconcile-all", () => runReconcileAll()));
   await boss.schedule("reconcile-all", "0 3 * * *"); // 03:00 UTC nightly
   await boss.work<{ shop: string }>("reconcile", one, handle("reconcile", (job) => runReconcileShop(job.data.shop)));

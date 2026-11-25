@@ -285,6 +285,8 @@ test("a VIEWER can't call any function that changes data", async () => {
           quotePrefix: "Q-",
           nextQuoteNumber: 1,
           defaultExpiryDays: 30,
+          followUpNotViewedDays: null,
+          followUpNotOrderedDays: null,
           reserveInventory: false,
           importSubmittedDrafts: false,
           notifyEmails: [],

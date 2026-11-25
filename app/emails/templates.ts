@@ -8,6 +8,8 @@ const EMAIL_TYPES = [
   "quoteViewed",
   "quoteOrdered",
   "expiringSoon",
+  "followUpNotViewed",
+  "followUpNotOrdered",
   "needsAttention",
   "quoteDeclined",
   "changesRequested",

@@ -140,11 +140,19 @@ const isInstalled = async (shop: string) => {
   return record !== null && record.uninstalledAt === null;
 };
 
+// M10.3 follow-up days: an empty field is off (null).
+const optionalDays = z.preprocess(
+  (value) => (value === null || String(value).trim() === "" ? null : value),
+  z.coerce.number().int().min(1).max(90).nullable(),
+);
+
 // Settings → General. Emails come as one comma-separated field.
 const generalSettingsSchema = z.object({
   quotePrefix: z.string().trim().regex(/^[A-Z0-9-]{1,8}$/, "settings.errors.prefix"),
   nextQuoteNumber: z.coerce.number().int().min(1).max(99_999_999),
   defaultExpiryDays: z.coerce.number().int().min(1).max(365),
+  followUpNotViewedDays: optionalDays,
+  followUpNotOrderedDays: optionalDays,
   reserveInventory: z.boolean(),
   importSubmittedDrafts: z.boolean(),
   notifyEmails: z.array(z.email()).max(20),
@@ -156,6 +164,8 @@ const generalSettingsFromForm = (form: FormData): GeneralSettings =>
     quotePrefix: String(form.get("quotePrefix") ?? "").toUpperCase(),
     nextQuoteNumber: form.get("nextQuoteNumber"),
     defaultExpiryDays: form.get("defaultExpiryDays"),
+    followUpNotViewedDays: form.get("followUpNotViewedDays"),
+    followUpNotOrderedDays: form.get("followUpNotOrderedDays"),
     reserveInventory: form.get("reserveInventory") === "on",
     importSubmittedDrafts: form.get("importSubmittedDrafts") === "on",
     notifyEmails: String(form.get("notifyEmails") ?? "")

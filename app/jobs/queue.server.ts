@@ -17,6 +17,7 @@ const QUEUES = {
   "import-csv": { retryLimit: 3, retryDelay: 30, retryBackoff: true, expireInSeconds: 600 },
   // Scheduled hourly; a failed run is simply retried by the next one.
   "expire-quotes": { retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 },
+  "follow-ups": { retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 }, // M10.3
   privacy: { retryLimit: 10, retryDelay: 60, retryBackoff: true, retryDelayMax: 21600 },
   // Nightly (M4.3): reconcile-all fans out one reconcile job per shop; a missed night is caught the next.
   "reconcile-all": { retryLimit: 2, retryDelay: 300, expireInSeconds: 600 },
