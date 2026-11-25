@@ -116,6 +116,12 @@ test("M10.3: opening the list is an 'account' view of each SENT quote, once per 
   expect(await viewsOf(ordered.id)).toHaveLength(0);
 });
 
+test("M10.4: the list carries the quote's payment terms", async () => {
+  const termed = await sentQuote({ paymentTermsName: "Due on receipt" });
+  const listed = (await listCustomerQuotes(SHOP, [COMPANY_A])).find((quote) => quote.id === termed.id);
+  expect(listed?.paymentTerms).toEqual({ name: "Due on receipt", depositPct: null });
+});
+
 test("acting on another company's quote is a 404 (scenario 4)", async () => {
   const other = await sentQuote({ companyId: COMPANY_B });
   expect(await statusOf(customerAction(actor, [COMPANY_A], other.id, "decline", "no"))).toBe(404);

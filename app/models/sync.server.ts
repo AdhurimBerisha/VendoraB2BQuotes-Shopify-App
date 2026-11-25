@@ -143,7 +143,12 @@ const doUpsert = async (admin: AdminApiContext, quote: QuoteWithVersion, send?: 
   const shop = await db.shop.findUniqueOrThrow({ where: { id: quote.shop } });
   const location = await getCompanyLocation(admin, quote.companyLocationId);
   if (!location) throw new ShopifyUserErrors(["Company location no longer exists"]);
-  const input = drafts.draftOrderInput({ quote, version, location, shop });
+  // M10.4: the template's type decides whether Shopify needs an issue date.
+  const paymentTermsType = quote.paymentTermsTemplateId
+    ? ((await drafts.getPaymentTermsTemplates(admin)).find((template) => template.id === quote.paymentTermsTemplateId)
+        ?.paymentTermsType ?? null)
+    : null;
+  const input = drafts.draftOrderInput({ quote, version, location, shop, paymentTermsType });
 
   let draftOrderId = quote.draftOrderId;
   let adopted = false;

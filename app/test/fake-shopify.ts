@@ -239,6 +239,15 @@ const fakeShopify = ({
         data: { draftOrderInvoiceSend: { draftOrder: { id: draft.id, invoiceSentAt: draft.invoiceSentAt }, userErrors: [] } },
       });
     }
+    if (query.includes("VendoraPaymentTermsTemplates")) {
+      // M10.4: a few of Shopify's real templates (FIXED is filtered out by the app).
+      const paymentTermsTemplates = [
+        { id: "gid://shopify/PaymentTermsTemplate/1", name: "Due on receipt", paymentTermsType: "RECEIPT", dueInDays: null },
+        { id: "gid://shopify/PaymentTermsTemplate/4", name: "Net 30", paymentTermsType: "NET", dueInDays: 30 },
+        { id: "gid://shopify/PaymentTermsTemplate/7", name: "Fixed", paymentTermsType: "FIXED", dueInDays: null },
+      ];
+      return Response.json({ data: { paymentTermsTemplates } });
+    }
     if (query.includes("VendoraShopInfo")) {
       return Response.json({
         data: { shop: { id: "gid://shopify/Shop/1", name: "Fake Shop", ianaTimezone: "UTC", currencyCode: "USD" } },

@@ -49,6 +49,12 @@ const loadQuotePdfData = async (
     issuedAt: localDateString(version.lockedAt ?? version.createdAt, settings.timezone),
     expiresAt: quote.expiresAt ? localDateString(quote.expiresAt, settings.timezone) : null,
     poNumber: quote.poNumber,
+    // M10.4: e.g. "Payment terms: Net 30 · 30 % deposit at checkout"; null without terms.
+    paymentTerms: quote.paymentTermsName
+      ? quote.depositPct
+        ? i18n.t("pdf.paymentTermsDeposit", { terms: quote.paymentTermsName, pct: quote.depositPct })
+        : i18n.t("pdf.paymentTerms", { terms: quote.paymentTermsName })
+      : null,
     shopName: info.name,
     // Checked again here: a stored value from before the check, or written another way, isn't fetched.
     logoUrl: settings.logoUrl && isAllowedLogoUrl(settings.logoUrl) ? settings.logoUrl : null,

@@ -27,6 +27,7 @@ type CustomerQuote = {
   invoiceUrl: string | null;
   pdfUrl: string | null;
   poNumber: string | null; // M9.3
+  paymentTerms: { name: string; depositPct: number | null } | null; // M10.4
 };
 type CustomerAction = "decline" | "changes";
 
@@ -77,6 +78,7 @@ const listCustomerQuotes = async (shop: string, companyIds: string[]): Promise<C
       timeZone: shopRow.timezone,
       invoiceUrl: quote.status === "SENT" ? quote.invoiceUrl : null,
       poNumber: quote.poNumber,
+      paymentTerms: quote.paymentTermsName ? { name: quote.paymentTermsName, depositPct: quote.depositPct } : null,
       pdfUrl: linkAlive
         ? `${quoteLink(process.env.SHOPIFY_APP_URL ?? "", {
             shop,

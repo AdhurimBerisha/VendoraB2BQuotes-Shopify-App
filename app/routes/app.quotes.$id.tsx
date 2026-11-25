@@ -21,7 +21,7 @@ import { resolveAttention } from "../models/attention-actions.server";
 import { quoteHistory } from "../models/audit.server";
 import { can, requirePermission } from "../models/permissions";
 import { BLOCKING, type LineProblem, marginOf } from "../models/pricing";
-import { cancelQuote, getQuote, quoteLabel, setExpiry, setPoNumber } from "../models/quote.server";
+import { cancelQuote, getQuote, quoteLabel, savePaymentTerms, setExpiry, setPoNumber } from "../models/quote.server";
 import { getShop } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { requestSync, sendQuote } from "../models/sync.server";
@@ -29,7 +29,7 @@ import { logger } from "../lib/logger.server";
 import { diffVersions, duplicateQuote, reviseQuote, saveDraftLines } from "../models/version.server";
 import { getCompanyLocation, getContact } from "../shopify/companies.server";
 import { canViewCosts } from "../shopify/products.server";
-import { getDraftOrderSummary } from "../shopify/draft-orders.server";
+import { getDraftOrderSummary, getPaymentTermsTemplates } from "../shopify/draft-orders.server";
 
 // Shopify data shown on the page; if Shopify fails, the quote still shows.
 const orNull = async <T,>(what: string, fn: () => Promise<T>): Promise<T | null> => {
@@ -80,6 +80,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     userId === null ? null : (staff.find((member) => member.shopifyUserId.toString() === userId.toString())?.displayName ?? null);
   const address = location?.shippingAddress;
   const isOwn = actor.userId !== null && quote.assignedToUserId === actor.userId;
+  // M10.4: terms can change while the quote is a draft; the choices come from Shopify (cached).
+  const termsEditable = quote.status === "DRAFT" && can(actor, "quote.edit");
+  const termsTemplates = termsEditable ? await orNull("payment terms", () => getPaymentTermsTemplates(actor.admin)) : null;
   // M10.3: buyer views (public page, PDF, customer account), from the history already loaded.
   const views = events.filter((event) => event.action === "quote.viewed");
   const lastSent = events.filter((event) => event.action === "quote.sent").at(-1);
@@ -98,6 +101,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       expires: quote.expiresAt ? when(quote.expiresAt) : null,
       expiresOn: quote.expiresAt ? localDateString(quote.expiresAt, timezone) : "",
       poNumber: quote.poNumber ?? "",
+      paymentTerms: { templateId: quote.paymentTermsTemplateId ?? "", name: quote.paymentTermsName, depositPct: quote.depositPct },
       views: lastView ? { count: views.length, at: when(lastView.createdAt) } : null,
       notViewed: quote.status === "SENT" && !!lastSent && (!lastView || lastView.createdAt < lastSent.createdAt),
       today: localDateString(new Date(), timezone),
@@ -208,6 +212,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       setExpiry: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
       setPoNumber: can(actor, "quote.edit") && ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"].includes(quote.status),
     },
+    termsTemplates: termsTemplates?.map((template) => ({ id: template.id, name: template.name })) ?? null,
   };
 };
 
@@ -274,6 +279,7 @@ const intentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("cancel"), reason: z.string().max(500).optional() }),
   z.object({ intent: z.literal("setExpiry"), expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   z.object({ intent: z.literal("setPoNumber"), poNumber: z.string().max(100) }),
+  z.object({ intent: z.literal("setPaymentTerms"), templateId: z.string().max(100), depositPct: z.string().max(3) }),
 ]);
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -318,6 +324,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         break;
       case "setExpiry":
         await setExpiry(actor, id, input.expiresOn);
+        break;
+      case "setPaymentTerms":
+        await savePaymentTerms(actor, id, {
+          templateId: input.templateId === NO_TERMS ? null : input.templateId,
+          depositPct: input.depositPct.trim() === "" ? null : Number(input.depositPct),
+        });
         break;
       case "setPoNumber":
         await setPoNumber(actor, id, input.poNumber);
@@ -426,6 +438,17 @@ export default function QuoteDetail() {
         {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}
         <ProblemsBanner data={data} onResolve={(code, action) => submit("resolve", { code, action })} busy={fetcher.state !== "idle"} />
         {perms.setExpiry && <ExpiryForm expiresOn={quote.expiresOn} today={quote.today} />}
+        {data.termsTemplates ? (
+          <PaymentTermsForm terms={quote.paymentTerms} templates={data.termsTemplates} />
+        ) : (
+          quote.paymentTerms.name && (
+            <s-text>
+              {quote.paymentTerms.depositPct
+                ? t("quote.paymentTerms.valueDeposit", { terms: quote.paymentTerms.name, pct: quote.paymentTerms.depositPct })
+                : t("quote.paymentTerms.value", { terms: quote.paymentTerms.name })}
+            </s-text>
+          )
+        )}
         {perms.setPoNumber ? (
           <PoNumberForm poNumber={quote.poNumber} />
         ) : (
@@ -497,6 +520,53 @@ function ExpiryForm({ expiresOn, today }: { expiresOn: string; today: string }) 
 }
 
 // M9.3: the buyer's PO number (they may also add it themselves before paying).
+// The "no terms" option. Not "": an s-option with an empty value submits its label instead.
+const NO_TERMS = "none";
+
+function PaymentTermsForm({
+  terms,
+  templates,
+}: {
+  terms: LoaderData["quote"]["paymentTerms"];
+  templates: NonNullable<LoaderData["termsTemplates"]>;
+}) {
+  const { t } = useTranslation();
+  const fetcher = useFetcher<typeof action>();
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="setPaymentTerms" />
+      <s-grid gridTemplateColumns="1fr 1fr auto" gap="small-200" alignItems="end">
+        <s-select
+          label={t("quote.paymentTerms.label")}
+          details={t("quote.paymentTerms.help")}
+          name="templateId"
+          value={terms.templateId || NO_TERMS}
+        >
+          <s-option value={NO_TERMS}>{t("quote.paymentTerms.none")}</s-option>
+          {templates.map((template) => (
+            <s-option key={template.id} value={template.id}>
+              {template.name}
+            </s-option>
+          ))}
+        </s-select>
+        <s-number-field
+          label={t("quote.paymentTerms.deposit")}
+          details={t("quote.paymentTerms.depositHelp")}
+          name="depositPct"
+          value={terms.depositPct === null ? "" : String(terms.depositPct)}
+          min={1}
+          max={99}
+          step={1}
+        ></s-number-field>
+        <s-button type="submit" {...(fetcher.state !== "idle" ? { loading: true } : {})}>
+          {t("quote.paymentTerms.save")}
+        </s-button>
+      </s-grid>
+      <ErrorBanner result={fetcher.data} />
+    </fetcher.Form>
+  );
+}
+
 function PoNumberForm({ poNumber }: { poNumber: string }) {
   const { t } = useTranslation();
   const fetcher = useFetcher<typeof action>();

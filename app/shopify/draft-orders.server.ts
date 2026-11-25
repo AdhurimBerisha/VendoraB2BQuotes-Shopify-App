@@ -10,6 +10,30 @@ import { call, throwOnUserErrors } from "./client.server";
 
 const quoteTag = (quoteId: string) => `vendora-quote-${quoteId}`;
 
+// M10.4: Shopify's payment terms templates. The same for every shop, so one process-wide copy.
+// FIXED is left out: it needs a due date per quote.
+type PaymentTermsTemplate = { id: string; name: string; paymentTermsType: string; dueInDays: number | null };
+const OFFERED_TERMS = ["RECEIPT", "FULFILLMENT", "NET"];
+let termsTemplates: PaymentTermsTemplate[] | undefined;
+
+const getPaymentTermsTemplates = async (admin: AdminApiContext): Promise<PaymentTermsTemplate[]> => {
+  if (termsTemplates) return termsTemplates;
+  const response = await call(() =>
+    admin.graphql(
+      `#graphql
+      query VendoraPaymentTermsTemplates {
+        paymentTermsTemplates { id name paymentTermsType dueInDays }
+      }`,
+    ),
+  );
+  const { data } = await response.json();
+  const offered = (data?.paymentTermsTemplates ?? [])
+    .filter((template) => OFFERED_TERMS.includes(template.paymentTermsType))
+    .map((template) => ({ id: template.id, name: template.name, paymentTermsType: template.paymentTermsType, dueInDays: template.dueInDays ?? null }));
+  termsTemplates = offered;
+  return offered;
+};
+
 // A CompanyAddress as VendoraCompanyLocation returns it.
 type CompanyAddress = {
   address1?: string | null;
@@ -51,6 +75,8 @@ type DraftInputSource = {
     companyContactId: string;
     expiresAt: Date | null;
     poNumber: string | null; // M9.3
+    paymentTermsTemplateId: string | null; // M10.4
+    depositPct: number | null;
   };
   version: {
     versionNumber: number;
@@ -66,11 +92,13 @@ type DraftInputSource = {
   };
   location: { shippingAddress?: CompanyAddress; billingAddress?: CompanyAddress };
   shop: { quotePrefix: string; reserveInventory: boolean };
+  paymentTermsType?: string | null; // M10.4: the template's type; NET needs the issue date
+  now?: Date;
 };
 
 // The DraftOrderInput for one quote version. Every line carries the quote's unit price (catalog
 // price incl. price breaks as priced when saved, or the override), plus the discounts.
-const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) => {
+const draftOrderInput = ({ quote, version, location, shop, paymentTermsType = null, now = new Date() }: DraftInputSource) => {
   const label = `${shop.quotePrefix}${quote.number}`;
   const percent = (value: Money, title: string) => ({
     // Codegen enums are type-only (ambient .d.ts), so the wire value is asserted.
@@ -111,6 +139,16 @@ const draftOrderInput = ({ quote, version, location, shop }: DraftInputSource) =
     tags: [quoteTag(quote.id)],
     ...(shop.reserveInventory &&
       quote.expiresAt && { reserveInventoryUntil: quote.expiresAt.toISOString() }),
+    // M10.4: net terms count from now (the sync right before sending). A deposit needs terms.
+    // deposit: null removes one set earlier (an update without the field keeps it). Shopify can't
+    // remove terms from a draft order at all (null is ignored), so savePaymentTerms refuses that.
+    ...(quote.paymentTermsTemplateId && {
+      paymentTerms: {
+        paymentTermsTemplateId: quote.paymentTermsTemplateId,
+        ...(paymentTermsType === "NET" && { paymentSchedules: [{ issuedAt: now.toISOString() }] }),
+      },
+      deposit: quote.depositPct ? { percentage: quote.depositPct } : null,
+    }),
   };
 };
 
@@ -315,6 +353,7 @@ export {
   getDraftOrder,
   getDraftForReconcile,
   getDraftOrderSummary,
+  getPaymentTermsTemplates,
   getSubmittedDraft,
   quoteTag,
   removeDraftTags,
@@ -322,4 +361,4 @@ export {
   toMailingAddress,
   updateDraftOrder,
 };
-export type { CompanyAddress, DraftInputSource };
+export type { CompanyAddress, DraftInputSource, PaymentTermsTemplate };

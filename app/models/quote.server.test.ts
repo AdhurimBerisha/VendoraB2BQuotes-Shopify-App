@@ -5,7 +5,7 @@ import { D } from "../lib/money";
 import { fakeShopify } from "../test/fake-shopify";
 import { staff, testQuote, testShop } from "../test/factories";
 import { redactShop } from "./privacy.server";
-import { createQuote, getQuote, setPoNumber, transition } from "./quote.server";
+import { createQuote, getQuote, locationTerms, savePaymentTerms, setPoNumber, transition } from "./quote.server";
 import { saveDraftLines } from "./version.server";
 
 let SHOP: string;
@@ -230,5 +230,64 @@ test("M9.3: the PO number goes on the quote and only the PO number on its draft 
   await expect(setPoNumber(actor(), quote.id, "x".repeat(101))).rejects.toBeInstanceOf(UserError);
   await db.quote.update({ where: { id: quote.id }, data: { status: "ORDERED" } });
   await expect(setPoNumber(actor(), quote.id, "PO-78")).rejects.toBeInstanceOf(ConflictError);
+});
+
+test("M10.4: a new quote starts with the company location's terms and deposit", async () => {
+  const withTerms = fakeShopify({
+    location: {
+      id: "gid://shopify/CompanyLocation/3",
+      name: "Main",
+      currency: "USD",
+      company: { id: "gid://shopify/Company/3", name: "Termed Co", mainContact: { id: "gid://shopify/CompanyContact/3", customer: null } },
+      buyerExperienceConfiguration: {
+        paymentTermsTemplate: { id: "gid://shopify/PaymentTermsTemplate/4", name: "Net 30" },
+        deposit: { percentage: 25.4 },
+      },
+    },
+  });
+  const quote = await createQuote(staff(SHOP, withTerms.admin), { locationId: "gid://shopify/CompanyLocation/3" });
+  expect(quote).toMatchObject({ paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/4", paymentTermsName: "Net 30", depositPct: 25 });
+
+  // No terms on the location: no terms, and a deposit without terms is ignored.
+  expect(locationTerms({ buyerExperienceConfiguration: { paymentTermsTemplate: null, deposit: { percentage: 30 } } })).toEqual({
+    paymentTermsTemplateId: null,
+    paymentTermsName: null,
+    depositPct: null,
+  });
+  expect(locationTerms({})).toMatchObject({ paymentTermsTemplateId: null });
+});
+
+test("M10.4: payment terms are saved on a draft, checked, and audited", async () => {
+  const quote = await testQuote(SHOP);
+  await savePaymentTerms(actor(), quote.id, { templateId: "gid://shopify/PaymentTermsTemplate/4", depositPct: 30 });
+  expect(await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).toMatchObject({
+    paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/4",
+    paymentTermsName: "Net 30",
+    depositPct: 30,
+  });
+  const event = await db.auditEvent.findFirstOrThrow({ where: { quoteId: quote.id, action: "quote.payment_terms_set" } });
+  expect(event.data).toMatchObject({ paymentTermsName: "Net 30", depositPct: 30 });
+
+  const save = (templateId: string | null, depositPct: number | null) => savePaymentTerms(actor(), quote.id, { templateId, depositPct });
+  await expect(save(null, 30)).rejects.toMatchObject({ key: "quote.errors.depositNeedsTerms" });
+  await expect(save("gid://shopify/PaymentTermsTemplate/4", 100)).rejects.toMatchObject({ key: "quote.errors.depositRange" });
+  await expect(save("gid://shopify/PaymentTermsTemplate/4", 2.5)).rejects.toMatchObject({ key: "quote.errors.depositRange" });
+  await expect(save("gid://shopify/PaymentTermsTemplate/7", null)).rejects.toMatchObject({ key: "quote.errors.unknownTerms" }); // FIXED isn't offered
+  await expect(save("gid://shopify/PaymentTermsTemplate/999", null)).rejects.toBeInstanceOf(UserError);
+
+  await save(null, null); // back to Shopify's default
+  expect(await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).toMatchObject({ paymentTermsTemplateId: null, depositPct: null });
+
+  // Back to "no terms" is refused once a draft order has them: Shopify would keep them.
+  const synced = await testQuote(SHOP, {
+    overrides: { draftOrderId: "gid://shopify/DraftOrder/1", paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/4", paymentTermsName: "Net 30" },
+  });
+  await expect(savePaymentTerms(actor(), synced.id, { templateId: null, depositPct: null })).rejects.toMatchObject({
+    key: "quote.errors.termsCantBeRemoved",
+  });
+  await savePaymentTerms(actor(), synced.id, { templateId: "gid://shopify/PaymentTermsTemplate/1", depositPct: null }); // other terms: fine
+
+  const sent = await testQuote(SHOP, { overrides: { status: "SENT" } });
+  await expect(savePaymentTerms(actor(), sent.id, { templateId: null, depositPct: null })).rejects.toBeInstanceOf(ConflictError);
 });
 

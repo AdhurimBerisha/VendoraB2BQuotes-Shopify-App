@@ -8,7 +8,7 @@ import { contactIdForLocation, getCompanyLocation } from "../shopify/companies.s
 import type { CustomerActor, WebhookActor } from "./actor";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
-import { insertQuote, quoteLabel } from "./quote.server";
+import { insertQuote, locationTerms, quoteLabel } from "./quote.server";
 import { type DraftLineInput, lineRows, priceLines } from "./version.server";
 
 // Quotes buyers ask for (M3.5): a submitted checkout (draft order) or the theme's
@@ -42,6 +42,7 @@ const createRequestedQuote = async (
         companyContactId: contact.id,
         contactCustomerId: contact.customer?.id ?? null,
         currencyCode: location.currency,
+        ...locationTerms(location), // M10.4
         ...(fromDraft && { draftOrderId: source.draftOrderId, syncStatus: "SYNCED" }), // the draft order exists
       },
       null,

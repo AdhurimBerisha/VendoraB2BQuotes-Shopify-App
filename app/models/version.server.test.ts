@@ -272,6 +272,11 @@ test("duplicate: a new DRAFT at today's prices, deleted products left out, histo
     ],
     null,
   );
+  // M10.4: the copy keeps the source's terms, not the location's (the fake location has none).
+  await db.quote.update({
+    where: { id: sourceId },
+    data: { paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/4", paymentTermsName: "Net 30", depositPct: 20 },
+  });
   await submitQuote(rep(), sourceId);
   variants[VARIANT] = { price: "120.00" };
   delete variants[GONE];
@@ -283,6 +288,7 @@ test("duplicate: a new DRAFT at today's prices, deleted products left out, histo
   expect(copy.status).toBe("DRAFT");
   expect(copy.number).not.toBe(source.number);
   expect(copy.companyLocationId).toBe(source.companyLocationId);
+  expect(copy).toMatchObject({ paymentTermsName: "Net 30", depositPct: 20 });
   expect(copy.currentVersion!.versionNumber).toBe(1);
   // 2 × 120.00 − 10 % = 216.00
   expect(copy.currentVersion!.lines.map((l) => [l.variantId, l.lineTotal.toFixed(2)])).toEqual([[VARIANT, "216.00"]]);

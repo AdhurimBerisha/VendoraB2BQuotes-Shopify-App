@@ -91,6 +91,16 @@
     },
     "duplicateDropped_one": "{{count}} line was left out: its product no longer exists.",
     "duplicateDropped_other": "{{count}} lines were left out: their products no longer exist.",
+    "paymentTerms": {
+      "label": "Payment terms",
+      "none": "None (Shopify's default)",
+      "help": "Starts with the company location's terms. Goes to the draft order and the buyer's invoice.",
+      "deposit": "Deposit at checkout (%)",
+      "depositHelp": "Optional, 1–99. Needs payment terms.",
+      "save": "Save payment terms",
+      "value": "Payment terms: {{terms}}",
+      "valueDeposit": "Payment terms: {{terms}} · {{pct}} % deposit at checkout"
+    },
     "poNumber": {
       "label": "PO number",
       "help": "The buyer's purchase order number. It goes on the Shopify order. The buyer can also add it before paying.",
@@ -220,7 +230,12 @@
       "invalidDate": "Choose a valid date.",
       "expiryInPast": "The expiry date can't be in the past.",
       "poNumberTooLong": "The PO number can be at most {{max}} characters.",
-      "poNumberClosed": "The PO number can't be changed once the quote is ordered, declined, expired or cancelled."
+      "poNumberClosed": "The PO number can't be changed once the quote is ordered, declined, expired or cancelled.",
+      "depositRange": "The deposit must be a whole number from 1 to 99 %.",
+      "depositNeedsTerms": "A deposit needs payment terms.",
+      "unknownTerms": "Choose payment terms from the list.",
+      "termsCantBeRemoved": "Shopify can't remove payment terms from a draft order that already has them. Choose other terms, for example Due on receipt.",
+      "termsLocked": "Payment terms can only be changed while the quote is a draft. Revise it first."
     }
   },
   "history": {
@@ -242,7 +257,8 @@
       "follow_up": "sent a follow-up reminder",
       "declined": "the buyer declined the quote",
       "changes_requested": "the buyer asked for changes",
-      "po_number_set": "set the PO number"
+      "po_number_set": "set the PO number",
+      "payment_terms_set": "set the payment terms"
     },
     "sync": {
       "requested": "asked to sync with Shopify",
@@ -454,6 +470,8 @@
     "version": "Version {{version}}",
     "issued": "Issued {{date}}",
     "validUntil": "Valid until {{date}}",
+    "paymentTerms": "Payment terms: {{terms}}",
+    "paymentTermsDeposit": "Payment terms: {{terms}} · {{pct}} % deposit at checkout",
     "poNumber": "PO number: {{po}}",
     "preparedFor": "Prepared for",
     "shipTo": "Ship to",
@@ -579,6 +597,8 @@
     "skip": "Skip to quote",
     "superseded": "This quote was updated. Check your email for the latest version.",
     "validUntil": "Valid until {{date}}",
+    "paymentTerms": "Payment terms: {{terms}}",
+    "paymentTermsDeposit": "Payment terms: {{terms}} · {{pct}} % deposit at checkout",
     "linesCaption": "Quote lines",
     "total": "Total (excl. tax and shipping)",
     "note": "Note",

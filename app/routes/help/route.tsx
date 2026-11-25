@@ -137,6 +137,12 @@ export default function Help() {
               because Shopify keeps costs in that currency.
             </div>
             <div className={styles.tip}>
+              <strong>Payment terms</strong>A new quote starts with the company location&apos;s payment terms and
+              deposit from Shopify. While the quote is a draft you can pick other terms (due on receipt, on fulfillment,
+              or Net 7 to Net 90) and a deposit the buyer pays at checkout. They go to the draft order and appear on the
+              PDF, the quote link and the customer account page.
+            </div>
+            <div className={styles.tip}>
               <strong>Versions</strong>A submitted version is locked. To change it, use <Ui>Revise (new version)</Ui>.
               Vendora keeps every version with its own PDF and shows what changed.
             </div>
