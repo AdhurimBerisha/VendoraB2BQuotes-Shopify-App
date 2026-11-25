@@ -238,6 +238,7 @@
       "expired": "the quote expired",
       "expiry_changed": "changed the expiry date",
       "expiry_reminded": "sent the expiry reminder",
+      "viewed": "opened the quote",
       "follow_up": "sent a follow-up reminder",
       "declined": "the buyer declined the quote",
       "changes_requested": "the buyer asked for changes",
