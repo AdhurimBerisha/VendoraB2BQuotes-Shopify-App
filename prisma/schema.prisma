@@ -157,6 +157,8 @@ model Shop {
   nextQuoteNumber   Int       @default(1001)
   quotePrefix       String    @default("Q-")
   defaultExpiryDays Int       @default(30)
+  followUpNotViewedDays  Int? // M10.3: email the rep when a SENT quote is not opened after N shop-local days; null = off
+  followUpNotOrderedDays Int? // M10.3: … opened but not ordered N days after the first view; null = off
   approvalRules     Json      @default("{\"maxDiscountPct\":15,\"maxTotalByCurrency\":{},\"alwaysRequire\":false,\"requireDifferentApprover\":true}")
   reserveInventory  Boolean   @default(false)
   importSubmittedDrafts Boolean @default(false) // M3.5: company draft orders made outside Vendora become quotes

@@ -48,6 +48,8 @@ const manageData = (
       quotePrefix: shop?.quotePrefix ?? "Q-",
       nextQuoteNumber: shop?.nextQuoteNumber ?? 1001,
       defaultExpiryDays: shop?.defaultExpiryDays ?? 30,
+      followUpNotViewedDays: shop?.followUpNotViewedDays ?? null,
+      followUpNotOrderedDays: shop?.followUpNotOrderedDays ?? null,
       reserveInventory: shop?.reserveInventory ?? false,
       importSubmittedDrafts: shop?.importSubmittedDrafts ?? false,
       notifyEmails: shop?.notifyEmails.join(", ") ?? "",
@@ -249,6 +251,26 @@ function GeneralSection({ general }: { general: ManageData["general"] }) {
             step={1}
             required
           ></s-number-field>
+          <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+            <s-number-field
+              label={t("settings.general.followUpNotViewedDays")}
+              details={t("settings.general.followUpHelp")}
+              name="followUpNotViewedDays"
+              value={general.followUpNotViewedDays === null ? "" : String(general.followUpNotViewedDays)}
+              min={1}
+              max={90}
+              step={1}
+            ></s-number-field>
+            <s-number-field
+              label={t("settings.general.followUpNotOrderedDays")}
+              details={t("settings.general.followUpHelp")}
+              name="followUpNotOrderedDays"
+              value={general.followUpNotOrderedDays === null ? "" : String(general.followUpNotOrderedDays)}
+              min={1}
+              max={90}
+              step={1}
+            ></s-number-field>
+          </s-grid>
           <s-switch
             label={t("settings.general.reserveInventory")}
             details={t("settings.general.reserveInventoryHelp")}

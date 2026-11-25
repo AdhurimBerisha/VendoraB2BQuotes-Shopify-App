@@ -18,6 +18,9 @@ const PUBLIC_HEADERS = {
   "Cache-Control": "private, no-store",
 };
 
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+
 // Bad, expired and unknown links all get the same 404, so nothing leaks.
 const notFound = () => new Response("Not found", { status: 404, headers: PUBLIC_HEADERS });
 
@@ -52,20 +55,25 @@ const findPublicQuote = async (request: Request, token: string) => {
   return { quote, version, shop, superseded };
 };
 
-// One "viewed" event (and email to the rep) per quote per day.
+type ViewSource = "page" | "pdf" | "account";
+
+// M10.3: at most one "viewed" event per quote per hour (so "Viewed 4×" means something), and the
+// rep's email at most once a day. Whoever opens it acts for the quote's contact.
 const recordView = async (
   quote: { id: string; shop: string; contactCustomerId: string | null; assignedToUserId: bigint | null },
   version: number,
+  source: ViewSource,
 ) => {
-  const since = new Date(Date.now() - 86_400_000);
-  const seen = await db.auditEvent.findFirst({
-    where: { shop: quote.shop, quoteId: quote.id, action: "quote.viewed", createdAt: { gte: since } },
-    select: { id: true },
+  const now = Date.now();
+  const last = await db.auditEvent.findFirst({
+    where: { shop: quote.shop, quoteId: quote.id, action: "quote.viewed", createdAt: { gte: new Date(now - DAY_MS) } },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
   });
-  if (seen) return;
+  if (last && now - last.createdAt.getTime() < HOUR_MS) return;
   const actor = { type: "CUSTOMER" as const, shop: quote.shop, customerId: quote.contactCustomerId ?? "unknown" };
-  await audit(db, actor, quote.id, "quote.viewed", { version });
-  await notify(db, quote.shop, "quoteViewed", { kind: "user", userId: quote.assignedToUserId }, { quoteId: quote.id });
+  await audit(db, actor, quote.id, "quote.viewed", { version, source });
+  if (!last) await notify(db, quote.shop, "quoteViewed", { kind: "user", userId: quote.assignedToUserId }, { quoteId: quote.id });
 };
 
 // M9.3: "Review and accept" on the public page saves the PO number (if changed), then the buyer goes
@@ -82,3 +90,4 @@ const acceptPublicQuote = async (request: Request, token: string, poNumber: stri
 };
 
 export { PUBLIC_HEADERS, acceptPublicQuote, findPublicQuote, notFound, recordView };
+export type { ViewSource };

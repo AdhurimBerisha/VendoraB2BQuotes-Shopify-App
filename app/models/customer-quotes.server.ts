@@ -9,6 +9,7 @@ import type { CustomerActor } from "./actor";
 import { raise } from "./attention.server";
 import { audit } from "./audit.server";
 import { notify } from "./notify.server";
+import { recordView } from "./public-quote.server";
 import { savePoNumber, transition } from "./quote.server";
 
 // Buyers in the customer account "Quotes" page (M3.4). Drafts and internal states stay hidden.
@@ -58,6 +59,10 @@ const listCustomerQuotes = async (shop: string, companyIds: string[]): Promise<C
       take: 50,
     }),
   ]);
+  // M10.3: opening this page shows the buyer every quote waiting for them, so it counts as a view.
+  for (const quote of quotes) {
+    if (quote.status === "SENT") await recordView(quote, quote.currentVersion?.versionNumber ?? 1, "account");
+  }
   const now = Date.now();
   return quotes.map((quote) => {
     // The signed link stops working 7 days after expiry (M3.2); don't offer a dead link.

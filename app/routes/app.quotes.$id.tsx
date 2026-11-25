@@ -80,6 +80,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     userId === null ? null : (staff.find((member) => member.shopifyUserId.toString() === userId.toString())?.displayName ?? null);
   const address = location?.shippingAddress;
   const isOwn = actor.userId !== null && quote.assignedToUserId === actor.userId;
+  // M10.3: buyer views (public page, PDF, customer account), from the history already loaded.
+  const views = events.filter((event) => event.action === "quote.viewed");
+  const lastSent = events.filter((event) => event.action === "quote.sent").at(-1);
+  const lastView = views.at(-1);
 
   return {
     quote: {
@@ -94,6 +98,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       expires: quote.expiresAt ? when(quote.expiresAt) : null,
       expiresOn: quote.expiresAt ? localDateString(quote.expiresAt, timezone) : "",
       poNumber: quote.poNumber ?? "",
+      views: lastView ? { count: views.length, at: when(lastView.createdAt) } : null,
+      notViewed: quote.status === "SENT" && !!lastSent && (!lastView || lastView.createdAt < lastSent.createdAt),
       today: localDateString(new Date(), timezone),
       draftOrderNumericId: quote.draftOrderId?.split("/").pop() ?? null,
       orderNumericId: quote.orderId?.split("/").pop() ?? null,
@@ -410,6 +416,11 @@ export default function QuoteDetail() {
           <StatusBadge status={quote.status} />
           {quote.rep && <s-text color="subdued">{t("quote.rep", { name: quote.rep })}</s-text>}
           {quote.expires && <s-text color="subdued">{t("quote.expires", { date: quote.expires })}</s-text>}
+          {quote.notViewed ? (
+            <s-text color="subdued">{t("quote.notViewed")}</s-text>
+          ) : (
+            quote.views && <s-text color="subdued">{t("quote.views", { count: quote.views.count, at: quote.views.at })}</s-text>
+          )}
         </s-stack>
         <ErrorBanner result={fetcher.data} />
         {pdfState === "failed" && <s-banner tone="critical">{t("quote.pdfFailed")}</s-banner>}

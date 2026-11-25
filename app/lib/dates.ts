@@ -81,6 +81,10 @@ const localDateString = (date: Date, timeZone: string) => {
   return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 };
 
+// Whole shop-local calendar days from one moment to another: Mon 23:50 → Tue 00:10 is 1 (M10.3).
+const localDaysBetween = (from: Date, to: Date, timeZone: string) =>
+  Math.round((Date.parse(localDateString(to, timeZone)) - Date.parse(localDateString(from, timeZone))) / 86_400_000);
+
 const formatDateTime = (date: Date, locale: string, timeZone: string) =>
   new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(date);
 
@@ -93,6 +97,7 @@ export {
   formatDate,
   formatDateTime,
   localDateString,
+  localDaysBetween,
   startOfMonthInTz,
   zonedToUtc,
 };

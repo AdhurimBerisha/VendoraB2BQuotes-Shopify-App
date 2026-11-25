@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addDaysEndOfDay, endOfLocalDay, localDateString, startOfMonthInTz } from "./dates";
+import { addDaysEndOfDay, endOfLocalDay, localDateString, localDaysBetween, startOfMonthInTz } from "./dates";
 
 const FROM = new Date("2026-10-26T20:00:00Z");
 
@@ -35,4 +35,13 @@ test("endOfLocalDay: real dates only", () => {
   expect(endOfLocalDay("2026-11-25", "America/New_York")?.toISOString()).toBe("2026-11-26T04:59:59.999Z");
   expect(endOfLocalDay("2026-02-30", "UTC")).toBeNull();
   expect(endOfLocalDay("26-11-2026", "UTC")).toBeNull();
+});
+
+test("localDaysBetween: shop-local calendar days (M10.3)", () => {
+  // 2026-11-24 23:50 and 2026-11-25 00:10 in New York (EST, UTC−5).
+  const monLate = new Date("2026-11-25T04:50:00Z");
+  const tueEarly = new Date("2026-11-25T05:10:00Z");
+  expect(localDaysBetween(monLate, tueEarly, "America/New_York")).toBe(1);
+  expect(localDaysBetween(monLate, tueEarly, "UTC")).toBe(0); // both 25 Nov in UTC
+  expect(localDaysBetween(monLate, new Date("2026-12-02T04:00:00Z"), "America/New_York")).toBe(7);
 });

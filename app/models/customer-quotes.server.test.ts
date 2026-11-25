@@ -102,6 +102,20 @@ test("lists only the buyer's companies' sent and closed quotes, without internal
   expect(await listCustomerQuotes(SHOP, [])).toEqual([]);
 });
 
+test("M10.3: opening the list is an 'account' view of each SENT quote, once per hour", async () => {
+  const sent = await sentQuote();
+  const ordered = await sentQuote({ status: "ORDERED" });
+  const viewsOf = (quoteId: string) => db.auditEvent.findMany({ where: { quoteId, action: "quote.viewed" } });
+
+  await listCustomerQuotes(SHOP, [COMPANY_A]);
+  await listCustomerQuotes(SHOP, [COMPANY_A]); // reload after an action: no second view
+
+  const views = await viewsOf(sent.id);
+  expect(views).toHaveLength(1);
+  expect(views[0].data).toMatchObject({ source: "account" });
+  expect(await viewsOf(ordered.id)).toHaveLength(0);
+});
+
 test("acting on another company's quote is a 404 (scenario 4)", async () => {
   const other = await sentQuote({ companyId: COMPANY_B });
   expect(await statusOf(customerAction(actor, [COMPANY_A], other.id, "decline", "no"))).toBe(404);
