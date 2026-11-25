@@ -9,6 +9,10 @@ const getCompanyLocation = async (admin: AdminApiContext, id: string) => {
         companyLocation(id: $id) {
           id name currency
           company { id name mainContact { id customer { id } } }
+          buyerExperienceConfiguration {
+            paymentTermsTemplate { id name }
+            deposit { ... on DepositPercentage { percentage } }
+          }
           shippingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
           billingAddress { address1 address2 city zip countryCode zoneCode companyName phone recipient }
         }

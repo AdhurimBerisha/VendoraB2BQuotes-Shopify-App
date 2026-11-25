@@ -7,7 +7,7 @@ import { addDaysEndOfDay, endOfLocalDay } from "../lib/dates";
 import { ConflictError, NotFoundError, UserError } from "../lib/errors";
 import { enqueue, getBoss } from "../jobs/queue.server";
 import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
-import { updateDraftOrder } from "../shopify/draft-orders.server";
+import { getPaymentTermsTemplates, updateDraftOrder } from "../shopify/draft-orders.server";
 import type { Actor, StaffActor, SystemActor } from "./actor";
 import { audit } from "./audit.server";
 import { requireCancel, requirePermission } from "./permissions";
@@ -44,6 +44,25 @@ const transition = async (
 };
 
 // Company, contact and currency come from Shopify, never from the client.
+type LocationTermsSource = {
+  buyerExperienceConfiguration?: {
+    paymentTermsTemplate?: { id: string; name: string } | null;
+    deposit?: { percentage?: number } | null;
+  } | null;
+};
+
+// M10.4: a new quote starts with the company location's own payment terms and deposit.
+const locationTerms = (location: LocationTermsSource) => {
+  const config = location.buyerExperienceConfiguration;
+  const template = config?.paymentTermsTemplate ?? null;
+  const deposit = config?.deposit?.percentage;
+  return {
+    paymentTermsTemplateId: template?.id ?? null,
+    paymentTermsName: template?.name ?? null,
+    depositPct: template && deposit ? Math.round(deposit) : null,
+  };
+};
+
 const quoteFields = async (actor: StaffActor, locationId: string) => {
   const location = await getCompanyLocation(actor.admin, locationId);
   if (!location) throw new UserError("quote.errors.locationNotFound");
@@ -58,6 +77,7 @@ const quoteFields = async (actor: StaffActor, locationId: string) => {
     contactCustomerId: contact.customer?.id ?? null,
     currencyCode: location.currency,
     assignedToUserId: actor.userId,
+    ...locationTerms(location),
   };
 };
 
@@ -251,6 +271,36 @@ const setPoNumber = async (actor: StaffActor, quoteId: string, poNumber: string)
   await savePoNumber(async () => actor.admin, actor, quote, poNumber);
 };
 
+const paymentTermsSchema = z.object({
+  templateId: z.string().nullable(),
+  depositPct: z.number().int().min(1).max(99).nullable(),
+});
+
+// M10.4: payment terms + deposit, while the quote is a draft (they are part of what gets approved).
+// null templateId = no terms (Shopify's default); a deposit needs terms.
+const savePaymentTerms = async (actor: StaffActor, quoteId: string, input: z.input<typeof paymentTermsSchema>) => {
+  requirePermission(actor, "quote.edit");
+  const parsed = paymentTermsSchema.safeParse(input);
+  if (!parsed.success) throw new UserError("quote.errors.depositRange");
+  const { templateId, depositPct } = parsed.data;
+  if (depositPct !== null && templateId === null) throw new UserError("quote.errors.depositNeedsTerms");
+  const quote = await db.quote.findFirst({ where: { id: quoteId, shop: actor.shop } });
+  if (!quote) throw new NotFoundError();
+  if (quote.status !== "DRAFT") throw new ConflictError("quote.errors.termsLocked");
+  // Shopify keeps terms on an existing draft order even when told to remove them (tested 2026-11-26).
+  if (templateId === null && quote.paymentTermsTemplateId && quote.draftOrderId) {
+    throw new UserError("quote.errors.termsCantBeRemoved");
+  }
+  const template = templateId === null ? null : (await getPaymentTermsTemplates(actor.admin)).find((t) => t.id === templateId);
+  if (template === undefined) throw new UserError("quote.errors.unknownTerms");
+  const data = { paymentTermsTemplateId: template?.id ?? null, paymentTermsName: template?.name ?? null, depositPct };
+  await db.$transaction(async (tx) => {
+    await tx.quote.update({ where: { id: quote.id }, data });
+    await audit(tx, actor, quote.id, "quote.payment_terms_set", data);
+  });
+  logger.info({ shop: actor.shop, quoteId, terms: data.paymentTermsName, depositPct }, "payment terms saved");
+};
+
 const quoteLabel = (prefix: string, number: number) => `${prefix}${number}`;
 
 export {
@@ -263,9 +313,11 @@ export {
   insertQuote,
   listFiltersSchema,
   listQuotes,
+  locationTerms,
   quoteFields,
   quoteLabel,
   quoteWhere,
+  savePaymentTerms,
   savePoNumber,
   searchFilters,
   setExpiry,

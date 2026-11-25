@@ -333,7 +333,13 @@ const duplicateQuote = async (actor: StaffActor, sourceId: string) => {
   const dropped = from.lines.length - lines.length;
 
   return db.$transaction(async (tx) => {
-    const { quote, version } = await insertQuote(tx, actor.shop, fields, actor.userId);
+    // M10.4: same deal again, so the source's payment terms and deposit, not the location's defaults.
+    const terms = {
+      paymentTermsTemplateId: source.paymentTermsTemplateId,
+      paymentTermsName: source.paymentTermsName,
+      depositPct: source.depositPct,
+    };
+    const { quote, version } = await insertQuote(tx, actor.shop, { ...fields, ...terms }, actor.userId);
     await tx.quoteLine.createMany({ data: lineRows(version.id, lines, fields.currencyCode) });
     await tx.quoteVersion.update({
       where: { id: version.id },

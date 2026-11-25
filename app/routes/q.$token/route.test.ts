@@ -98,6 +98,13 @@ test("M10.3: one view per hour, the rep's email at most once a day; source store
   expect(sources.map((event) => (event.data as { source: string }).source)).toEqual(["page", "pdf", "account"]);
 });
 
+test("M10.4: the payment terms line, only when the quote has terms", async () => {
+  const termed = await testQuote(SHOP_A, { overrides: { status: "SENT", paymentTermsName: "Net 30", depositPct: 30 } });
+  const plain = await testQuote(SHOP_A, { overrides: { status: "SENT" } });
+  expect((await get(tokenFor(SHOP_A, termed.id))).data.quote?.paymentTerms).toEqual({ name: "Net 30", depositPct: 30 });
+  expect((await get(tokenFor(SHOP_A, plain.id))).data.quote?.paymentTerms).toBeNull();
+});
+
 const accept = (token: string, poNumber: string) =>
   action({
     request: new Request(`https://vendora.test/q/${token}`, {

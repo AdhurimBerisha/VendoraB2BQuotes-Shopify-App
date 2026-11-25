@@ -86,6 +86,30 @@ test("create: input has addresses, tag, purchasing entity and note", async () =>
   expect((await load(quote.id)).syncStatus).toBe("SYNCED");
 });
 
+test("M10.4: payment terms and deposit go to the draft order; net terms get an issue date", async () => {
+  const shopify = fakeShopify();
+  const net = await testQuote(SHOP, {
+    overrides: { syncStatus: "QUEUED", paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/4", paymentTermsName: "Net 30", depositPct: 30 },
+  });
+  const receipt = await testQuote(SHOP, {
+    overrides: { syncStatus: "QUEUED", paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/1", paymentTermsName: "Due on receipt" },
+  });
+  const none = await queuedQuote();
+
+  const before = Date.now();
+  for (const quote of [net, receipt, none]) await runSync(shopify.admin, upsert(quote.id));
+
+  type TermsInput = { paymentTerms?: { paymentTermsTemplateId: string; paymentSchedules?: { issuedAt: string }[] }; deposit?: unknown };
+  const [netInput, receiptInput, noneInput] = shopify.drafts.map((draft) => draft.input as TermsInput);
+  expect(netInput.paymentTerms?.paymentTermsTemplateId).toBe("gid://shopify/PaymentTermsTemplate/4");
+  expect(Date.parse(netInput.paymentTerms?.paymentSchedules?.[0].issuedAt ?? "")).toBeGreaterThanOrEqual(before - 1000);
+  expect(netInput.deposit).toEqual({ percentage: 30 });
+  expect(receiptInput.paymentTerms).toEqual({ paymentTermsTemplateId: "gid://shopify/PaymentTermsTemplate/1" });
+  expect(receiptInput.deposit).toBeNull(); // clears a deposit set earlier
+  expect(noneInput.paymentTerms).toBeUndefined();
+  expect(noneInput.deposit).toBeUndefined();
+});
+
 test("overrides and discounts are sent; a zero discount is not", async () => {
   const shopify = fakeShopify();
   const quote = await queuedQuote();

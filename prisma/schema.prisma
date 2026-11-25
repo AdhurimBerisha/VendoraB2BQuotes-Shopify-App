@@ -59,6 +59,9 @@ model Quote {
   shopifyUpdatedAt     DateTime?
   orderId              String?
   poNumber             String? // the buyer's purchase-order number (M9.3), also on the draft order
+  paymentTermsTemplateId String? // M10.4: gid://shopify/PaymentTermsTemplate/…; null = no terms sent
+  paymentTermsName     String? // M10.4: e.g. "Net 30", for the PDF and buyer pages
+  depositPct           Int? // M10.4: 1–99 % due at checkout; only with terms
   attention            Json?
   lockVersion          Int            @default(0) // optimistic lock for edits
   createdAt            DateTime       @default(now())

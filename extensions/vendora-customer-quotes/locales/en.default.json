@@ -4,6 +4,8 @@
   "loadError": "We couldn't load your quotes. Try again later.",
   "empty": "You have no quotes yet.",
   "validUntil": "Valid until {{date}}",
+  "paymentTerms": "Payment terms: {{terms}}",
+  "paymentTermsDeposit": "Payment terms: {{terms}} · {{pct}} % deposit at checkout",
   "accept": "Review and accept",
   "poNumber": "Your PO number (optional)",
   "savePoNumber": "Save PO number",

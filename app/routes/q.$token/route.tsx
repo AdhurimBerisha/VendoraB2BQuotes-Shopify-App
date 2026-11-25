@@ -44,6 +44,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         // Shopify's checkout link, only while the quote is waiting for the buyer.
         invoiceUrl: quote.status === "SENT" ? quote.invoiceUrl : null,
         poNumber: quote.poNumber ?? "",
+        paymentTerms: quote.paymentTermsName ? { name: quote.paymentTermsName, depositPct: quote.depositPct } : null, // M10.4
       },
     },
     { headers: PUBLIC_HEADERS },
@@ -99,6 +100,13 @@ export default function PublicQuote() {
         ) : (
           <>
             {quote.expiresAt && <p>{t("publicQuote.validUntil", { date: quote.expiresAt })}</p>}
+            {quote.paymentTerms && (
+              <p>
+                {quote.paymentTerms.depositPct
+                  ? t("publicQuote.paymentTermsDeposit", { terms: quote.paymentTerms.name, pct: quote.paymentTerms.depositPct })
+                  : t("publicQuote.paymentTerms", { terms: quote.paymentTerms.name })}
+              </p>
+            )}
             {/* Also above the table: on a phone the table scrolls sideways and hides the total column. */}
             <p className={styles.summaryTotal}>
               {t("publicQuote.total")}: {quote.total}

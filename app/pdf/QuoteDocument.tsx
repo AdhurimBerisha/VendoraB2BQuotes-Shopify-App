@@ -68,6 +68,7 @@ const QuoteDocument = ({ q }: { q: QuotePdfData }) => {
             </Text>
             {q.expiresAt && <Text style={styles.muted}>{t("pdf.validUntil", { date: q.expiresAt })}</Text>}
             {q.poNumber && <Text style={styles.muted}>{t("pdf.poNumber", { po: q.poNumber })}</Text>}
+            {q.paymentTerms && <Text style={styles.muted}>{q.paymentTerms}</Text>}
           </View>
         </View>
 

@@ -32,6 +32,7 @@ type CustomerQuote = {
   invoiceUrl: string | null;
   pdfUrl: string | null;
   poNumber: string | null;
+  paymentTerms: { name: string; depositPct: number | null } | null;
 };
 type QuoteAction = "decline" | "changes";
 
@@ -161,6 +162,13 @@ const QuotesPage = () => {
                 <s-text>{t("validUntil", { date: formatDate(new Date(quote.expiresAt), { timeZone: quote.timeZone }) })}</s-text>
               )}
             </s-stack>
+            {quote.paymentTerms && (
+              <s-text>
+                {quote.paymentTerms.depositPct
+                  ? t("paymentTermsDeposit", { terms: quote.paymentTerms.name, pct: quote.paymentTerms.depositPct })
+                  : t("paymentTerms", { terms: quote.paymentTerms.name })}
+              </s-text>
+            )}
             {quote.status === "SENT" && <PoNumberField quoteId={quote.id} poNumber={quote.poNumber} onSaved={load} />}
             <s-button-group>
               {quote.status === "SENT" && quote.invoiceUrl && (
