@@ -54,22 +54,28 @@ const startWorkers = async () => {
   if (globalThis.vendoraWorkersStarted) return; // dev hot reload imports modules again
   globalThis.vendoraWorkersStarted = true;
   const boss = await getBoss();
-  const one = { batchSize: 1 };
+  // pg-boss polls each queue every 2 s by default: 12 queues ≈ 6 queries/s to the database all day,
+  // which used up Render's 5 GB free bandwidth (production suspended 2026-11-26). Jobs someone
+  // waits for (sync, invoice, webhooks, import) poll every 10 s; email, Flow and scheduled jobs
+  // every 60 s (~0.5 queries/s).
+  // ponytail: polling, LISTEN/NOTIFY (pg-boss `notify`) if 10 s feels slow and the pooler allows it
+  const one = { batchSize: 1, pollingIntervalSeconds: 10 };
+  const slow = { batchSize: 1, pollingIntervalSeconds: 60 };
 
   await boss.work<SyncJob>("sync-draft-order", one, handle("sync-draft-order", (job) => runSyncDraftOrder(job.data)));
   await boss.work<SendInvoiceJob>("send-invoice", one, handle("send-invoice", (job) => runSendInvoiceJob(job.data)));
   await boss.work<ProcessWebhookJob>("process-webhook", one, handle("process-webhook", (job) => runProcessWebhook(job.data)));
   await boss.work<ImportCsvJob>("import-csv", one, handle("import-csv", (job) => runImportCsv(job.data)));
-  await boss.work("expire-quotes", one, handle("expire-quotes", () => runExpireQuotes()));
+  await boss.work("expire-quotes", slow, handle("expire-quotes", () => runExpireQuotes()));
   await boss.schedule("expire-quotes", "0 * * * *"); // upsert: safe on every start
-  await boss.work("follow-ups", one, handle("follow-ups", () => runFollowUps()));
+  await boss.work("follow-ups", slow, handle("follow-ups", () => runFollowUps()));
   await boss.schedule("follow-ups", "30 * * * *"); // M10.3, half past, away from expire-quotes
-  await boss.work("reconcile-all", one, handle("reconcile-all", () => runReconcileAll()));
+  await boss.work("reconcile-all", slow, handle("reconcile-all", () => runReconcileAll()));
   await boss.schedule("reconcile-all", "0 3 * * *"); // 03:00 UTC nightly
-  await boss.work<{ shop: string }>("reconcile", one, handle("reconcile", (job) => runReconcileShop(job.data.shop)));
-  await boss.work<PrivacyJob>("privacy", one, handle("privacy", (job) => runPrivacy(job.data)));
-  await boss.work<SendEmailJob>("send-email", one, handle("send-email", (job) => runSendEmail(job.data, { jobId: job.id })));
-  await boss.work<FlowTriggerJob>("flow-trigger", one, handle("flow-trigger", (job) => runFlowTrigger(job.data)));
+  await boss.work<{ shop: string }>("reconcile", slow, handle("reconcile", (job) => runReconcileShop(job.data.shop)));
+  await boss.work<PrivacyJob>("privacy", slow, handle("privacy", (job) => runPrivacy(job.data)));
+  await boss.work<SendEmailJob>("send-email", slow, handle("send-email", (job) => runSendEmail(job.data, { jobId: job.id })));
+  await boss.work<FlowTriggerJob>("flow-trigger", slow, handle("flow-trigger", (job) => runFlowTrigger(job.data)));
   logger.info("[workers] started");
 
   // Let running jobs finish before the process exits.
