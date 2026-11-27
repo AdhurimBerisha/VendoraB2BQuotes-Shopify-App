@@ -1,11 +1,23 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
+import type { Prisma } from "@prisma/client";
 import db from "../db.server";
 import { ConflictError, ForbiddenError, NotFoundError, UserError } from "../lib/errors";
 import { D } from "../lib/money";
 import { fakeShopify } from "../test/fake-shopify";
 import { staff, testQuote, testShop } from "../test/factories";
 import { redactShop } from "./privacy.server";
-import { createQuote, getQuote, locationTerms, savePaymentTerms, setPoNumber, transition } from "./quote.server";
+import {
+  createQuote,
+  getQuote,
+  listFiltersSchema,
+  listQuotes,
+  locationTerms,
+  savePaymentTerms,
+  setPoNumber,
+  transition,
+  viewFilters,
+  viewQuery,
+} from "./quote.server";
 import { saveDraftLines } from "./version.server";
 
 let SHOP: string;
@@ -291,3 +303,59 @@ test("M10.4: payment terms are saved on a draft, checked, and audited", async ()
   await expect(savePaymentTerms(actor(), sent.id, { templateId: null, depositPct: null })).rejects.toBeInstanceOf(ConflictError);
 });
 
+
+// M10.6: the list's view filters (built-in views; saved views are the same query strings).
+test("view filters: mine, needs my action, expiring this week, sent not opened", async () => {
+  const shop = (await testShop({ timezone: "America/New_York" })).id;
+  const now = new Date("2026-11-28T15:00:00Z");
+  const day = (n: number) => new Date(now.getTime() + n * 86_400_000);
+  const make = async (name: string, overrides: Partial<Prisma.QuoteUncheckedCreateInput>) => {
+    const quote = await testQuote(shop, { overrides });
+    return [name, quote] as const;
+  };
+  const quotes = Object.fromEntries(
+    await Promise.all([
+      make("sentMine", { status: "SENT", assignedToUserId: 1n, expiresAt: day(2) }),
+      make("sentViewed", { status: "SENT", assignedToUserId: 2n, expiresAt: day(20) }),
+      make("pendingOther", { status: "PENDING_APPROVAL", assignedToUserId: 2n }),
+      make("pendingOwn", { status: "PENDING_APPROVAL", assignedToUserId: 1n }),
+      make("approvedMine", { status: "APPROVED", assignedToUserId: 1n }),
+      make("attentionMine", { status: "DRAFT", assignedToUserId: 1n, attention: [{ code: "SYNC_FAILED", at: "" }] }),
+      make("draftMine", { status: "DRAFT", assignedToUserId: 1n }),
+    ]),
+  );
+  const approval = (name: string, requestedBy: bigint) =>
+    db.approval.create({ data: { versionId: quotes[name].currentVersionId!, reasons: [], requestedBy } });
+  await approval("pendingOther", 2n);
+  await approval("pendingOwn", 1n);
+  const event = (name: string, action: string, at: Date) =>
+    db.auditEvent.create({ data: { shop, quoteId: quotes[name].id, actorType: "STAFF", action, createdAt: at } });
+  await event("sentMine", "quote.viewed", day(-5)); // before the send: doesn't count
+  await event("sentMine", "quote.sent", day(-3));
+  await event("sentViewed", "quote.sent", day(-3));
+  await event("sentViewed", "quote.viewed", day(-1));
+
+  const dbShop = await db.shop.findUniqueOrThrow({ where: { id: shop } });
+  const names = async (query: string, who = staff(shop, shopify.admin)) => {
+    const and = await viewFilters(who, listFiltersSchema.parse(Object.fromEntries(new URLSearchParams(query))), dbShop, now);
+    const { quotes: rows } = await listQuotes(shop, { and });
+    return Object.keys(quotes).filter((name) => rows.some((row) => row.id === quotes[name].id)).sort();
+  };
+
+  expect(await names("assigned=me")).toEqual(["approvedMine", "attentionMine", "draftMine", "pendingOwn", "sentMine"]);
+  expect(await names("action=me")).toEqual(["approvedMine", "attentionMine", "pendingOther"]);
+  // A rep can't approve: only their own ready-to-send and attention quotes.
+  expect(await names("action=me", staff(shop, shopify.admin, "REP"))).toEqual(["approvedMine", "attentionMine"]);
+  expect(await names("expiring=7")).toEqual(["sentMine"]);
+  expect(await names("notViewed=1")).toEqual(["sentMine"]);
+  expect(await names("assigned=me&notViewed=1")).toEqual(["sentMine"]);
+  await redactShop(shop);
+});
+
+test("viewQuery keeps only view filters, in a fixed order", () => {
+  expect(viewQuery(new URLSearchParams("cursor=abc&notViewed=1&status=SENT&q=acme&prev=first"))).toBe(
+    "q=acme&status=SENT&notViewed=1",
+  );
+  expect(viewQuery(new URLSearchParams("status=BOGUS&expiring=500"))).toBe("");
+  expect(viewQuery(new URLSearchParams(""))).toBe("");
+});

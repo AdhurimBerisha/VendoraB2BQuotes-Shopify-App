@@ -1,5 +1,6 @@
 import { logger } from "../lib/logger.server";
 import type { Session } from "@shopify/shopify-app-react-router/server";
+import { z } from "zod";
 import db from "../db.server";
 import { EMAIL_TYPES, type EmailType } from "../emails/templates";
 import { ForbiddenError, NotFoundError, UserError } from "../lib/errors";
@@ -86,11 +87,54 @@ const saveNotificationPrefs = async (actor: StaffActor, prefs: NotificationPrefs
   logger.info({ shop: actor.shop, off: EMAIL_TYPES.filter((type) => !prefs[type]) }, "notification prefs saved");
 };
 
+// M10.6: quote list views a staff member saved (name + the list's filter query, from viewQuery).
+// Each member sees and changes only their own.
+type SavedView = { name: string; query: string };
+const SAVED_VIEWS_MAX = 20;
+const VIEW_NAME_MAX = 40;
+const savedViewsSchema = z.array(z.object({ name: z.string(), query: z.string() })).catch([]);
+
+const ownStaff = (actor: StaffActor) => {
+  if (actor.userId === null) throw new ForbiddenError();
+  return { shop_shopifyUserId: { shop: actor.shop, shopifyUserId: actor.userId } };
+};
+
+const getSavedViews = async (actor: StaffActor): Promise<SavedView[]> => {
+  if (actor.userId === null) return [];
+  const member = await db.staffMember.findUnique({ where: ownStaff(actor), select: { savedViews: true } });
+  return savedViewsSchema.parse(member?.savedViews ?? []);
+};
+
+// The same name (any case) replaces that view. query must come from viewQuery (normalized filters).
+const saveView = async (actor: StaffActor, name: string, query: string) => {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > VIEW_NAME_MAX) throw new UserError("quotes.views.errors.name", { max: VIEW_NAME_MAX });
+  if (!query) throw new UserError("quotes.views.errors.noFilters");
+  const views = await getSavedViews(actor);
+  const others = views.filter((view) => view.name.toLowerCase() !== trimmed.toLowerCase());
+  if (others.length >= SAVED_VIEWS_MAX) throw new UserError("quotes.views.errors.tooMany", { max: SAVED_VIEWS_MAX });
+  const next = [...others, { name: trimmed, query }];
+  await db.staffMember.update({ where: ownStaff(actor), data: { savedViews: next } });
+  logger.info({ shop: actor.shop, views: next.length }, "quote view saved");
+};
+
+const deleteView = async (actor: StaffActor, name: string) => {
+  const views = await getSavedViews(actor);
+  const next = views.filter((view) => view.name !== name);
+  if (next.length === views.length) return; // already gone (another tab)
+  await db.staffMember.update({ where: ownStaff(actor), data: { savedViews: next } });
+  logger.info({ shop: actor.shop, views: next.length }, "quote view deleted");
+};
+
 export {
+  deleteView,
+  getSavedViews,
   getNotificationPrefs,
   listStaff,
   notificationPrefsFromForm,
   saveNotificationPrefs,
+  saveView,
   setRole,
   upsertStaffFromSession,
 };
+export type { SavedView };

@@ -186,6 +186,7 @@ model StaffMember {
   role              String   @default("REP") // Role in app/models/actor.ts; set on first visit, then only via Settings → Team (M2.4)
   locale            String   @default("en")
   notificationPrefs Json     @default("{}") // { [EmailType]: false } turns one email off; missing = on (M3.3)
+  savedViews        Json     @default("[]") // M10.6: [{ name, query }], quote list views this member saved
   lastSeenAt        DateTime @default(now())
   createdAt         DateTime @default(now())
 
