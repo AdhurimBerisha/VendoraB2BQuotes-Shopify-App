@@ -6,7 +6,7 @@ import { ForbiddenError, NotFoundError } from "../lib/errors";
 import { staff } from "../test/factories";
 import type { Role } from "./actor";
 import { redactShop } from "./privacy.server";
-import { setRole, upsertStaffFromSession } from "./staff.server";
+import { deleteView, getSavedViews, saveView, setRole, upsertStaffFromSession } from "./staff.server";
 
 const SHOP = `vitest-${randomUUID()}.myshopify.com`;
 
@@ -169,5 +169,45 @@ describe("setRole", () => {
     expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect(await db.staffMember.count({ where: { shop, role: "OWNER" } })).toBe(1);
     await redactShop(shop);
+  });
+});
+
+// M10.6: saved quote list views, per staff member.
+describe("saved views", () => {
+  const admin = {} as AdminApiContext;
+  beforeAll(async () => {
+    await db.staffMember.createMany({
+      data: [
+        { shop: SHOP, shopifyUserId: 501n, displayName: "Views A" },
+        { shop: SHOP, shopifyUserId: 502n, displayName: "Views B" },
+      ],
+    });
+  });
+
+  test("save, replace by name, delete; each member sees only their own", async () => {
+    const a = staff(SHOP, admin, "REP", 501n);
+    const b = staff(SHOP, admin, "REP", 502n);
+    await saveView(a, " Acme sent ", "q=acme&status=SENT");
+    await saveView(a, "acme SENT", "q=acme");
+    await saveView(a, "Mine", "assigned=me");
+    expect(await getSavedViews(a)).toEqual([
+      { name: "acme SENT", query: "q=acme" },
+      { name: "Mine", query: "assigned=me" },
+    ]);
+    expect(await getSavedViews(b)).toEqual([]);
+    await deleteView(b, "Mine"); // not b's: nothing happens
+    await deleteView(a, "Mine");
+    expect(await getSavedViews(a)).toEqual([{ name: "acme SENT", query: "q=acme" }]);
+  });
+
+  test("bad names, no filters and too many views are refused", async () => {
+    const a = staff(SHOP, admin, "REP", 501n);
+    await expect(saveView(a, "  ", "q=x")).rejects.toMatchObject({ key: "quotes.views.errors.name" });
+    await expect(saveView(a, "x".repeat(41), "q=x")).rejects.toMatchObject({ key: "quotes.views.errors.name" });
+    await expect(saveView(a, "Empty", "")).rejects.toMatchObject({ key: "quotes.views.errors.noFilters" });
+    for (let i = 0; i < 19; i++) await saveView(a, `View ${i}`, `q=${i}`);
+    await expect(saveView(a, "One too many", "q=z")).rejects.toMatchObject({ key: "quotes.views.errors.tooMany" });
+    await saveView(a, "View 3", "q=replaced"); // replacing at the limit is fine
+    expect((await getSavedViews(a)).find((view) => view.name === "View 3")?.query).toBe("q=replaced");
   });
 });

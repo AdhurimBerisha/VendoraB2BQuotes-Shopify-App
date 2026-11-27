@@ -143,6 +143,13 @@ export default function Help() {
               PDF, the quote link and the customer account page.
             </div>
             <div className={styles.tip}>
+              <strong>The quote list</strong>The <Ui>Next</Ui> column says what happens next on each quote: it needs
+              your approval, it&apos;s ready to send, the buyer opened it, it hasn&apos;t been opened yet, or it expires
+              soon. The buttons above the list are views: <Ui>My quotes</Ui>, <Ui>Needs my action</Ui>,{" "}
+              <Ui>Expiring this week</Ui> and <Ui>Sent, not opened</Ui>. Search or filter, then press{" "}
+              <Ui>Save view</Ui> to keep it as your own button. <Ui>Export CSV</Ui> exports what the list shows.
+            </div>
+            <div className={styles.tip}>
               <strong>Versions</strong>A submitted version is locked. To change it, use <Ui>Revise (new version)</Ui>.
               Vendora keeps every version with its own PDF and shows what changed.
             </div>

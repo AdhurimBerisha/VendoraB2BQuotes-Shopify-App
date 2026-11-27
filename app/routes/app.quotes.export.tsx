@@ -7,7 +7,7 @@ import { getActor } from "../models/actor.server";
 import { audit } from "../models/audit.server";
 import { requirePermission } from "../models/permissions";
 import { marginOf } from "../models/pricing";
-import { listFiltersSchema, quoteLabel, quoteWhere, searchFilters } from "../models/quote.server";
+import { listFiltersSchema, quoteLabel, quoteWhere, searchFilters, viewFilters } from "../models/quote.server";
 import { getShop, orB2bLost } from "../models/shop.server";
 import { listStaff } from "../models/staff.server";
 import { companyNames } from "../shopify/companies.server";
@@ -87,7 +87,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const search = await searchFilters(actor, filters.q, prefix);
 
   const quotes = await db.quote.findMany({
-    where: quoteWhere(actor.shop, { ...search, status: filters.status }),
+    where: quoteWhere(actor.shop, { ...search, status: filters.status, and: await viewFilters(actor, filters, shop) }),
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: MAX_ROWS,
     include: { currentVersion: { select: { id: true, versionNumber: true, subtotal: true, total: true } } },

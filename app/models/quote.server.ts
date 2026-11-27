@@ -1,5 +1,5 @@
 import { logger } from "../lib/logger.server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { z } from "zod";
 import db from "../db.server";
@@ -9,8 +9,9 @@ import { enqueue, getBoss } from "../jobs/queue.server";
 import { getCompanyLocation, searchCompanies } from "../shopify/companies.server";
 import { getPaymentTermsTemplates, updateDraftOrder } from "../shopify/draft-orders.server";
 import type { Actor, StaffActor, SystemActor } from "./actor";
+import { parseRules } from "./approval";
 import { audit } from "./audit.server";
-import { requireCancel, requirePermission } from "./permissions";
+import { can, requireCancel, requirePermission } from "./permissions";
 import { QUOTE_STATUSES, type QuoteStatus } from "./quote";
 
 // Which statuses each action may start from.
@@ -132,6 +133,7 @@ type QuoteFilters = {
   companyId?: string;
   companyIds?: string[]; // from a company-name search
   number?: number;
+  and?: Prisma.QuoteWhereInput[]; // M10.6: view filters (viewFilters)
 };
 
 // Shared by the list and the CSV export.
@@ -140,6 +142,7 @@ const quoteWhere = (shop: string, filters: QuoteFilters): Prisma.QuoteWhereInput
   status: filters.status,
   number: filters.number,
   companyId: filters.companyIds ? { in: filters.companyIds } : filters.companyId,
+  AND: filters.and,
 });
 
 // The quote list's URL parameters (list page and CSV export): bad values are ignored.
@@ -147,7 +150,79 @@ const listFiltersSchema = z.object({
   status: z.enum(QUOTE_STATUSES).optional().catch(undefined),
   q: z.string().trim().max(100).optional().catch(undefined),
   cursor: z.string().max(40).optional().catch(undefined),
+  // M10.6 views (built-in or saved): mine, needs my action, expiring within N days, sent not opened.
+  assigned: z.literal("me").optional().catch(undefined),
+  action: z.literal("me").optional().catch(undefined),
+  expiring: z.coerce.number().int().min(1).max(90).optional().catch(undefined),
+  notViewed: z.literal("1").optional().catch(undefined),
 });
+type ListFilters = z.infer<typeof listFiltersSchema>;
+
+// The filters that make a view, in a fixed order, so "same filters" means "same string" (M10.6).
+const VIEW_KEYS = ["q", "status", "assigned", "action", "expiring", "notViewed"] as const;
+const viewQuery = (params: URLSearchParams | Record<string, unknown>) => {
+  const filters = listFiltersSchema.parse(params instanceof URLSearchParams ? Object.fromEntries(params) : params);
+  const query = new URLSearchParams();
+  for (const key of VIEW_KEYS) {
+    const value = filters[key];
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  return query.toString();
+};
+
+const NOTHING: Prisma.QuoteWhereInput = { id: { in: [] } };
+
+// SENT quotes the buyer hasn't opened since the last send (same rule as the quote page, M10.3).
+const notViewedQuoteIds = async (shop: string) => {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT q.id FROM "Quote" q
+    JOIN (
+      SELECT "quoteId", max("createdAt") AS "sentAt" FROM "AuditEvent"
+      WHERE shop = ${shop} AND action = 'quote.sent' GROUP BY "quoteId"
+    ) sent ON sent."quoteId" = q.id
+    WHERE q.shop = ${shop} AND q.status = 'SENT'
+      AND NOT EXISTS (
+        SELECT 1 FROM "AuditEvent" v
+        WHERE v.shop = ${shop} AND v."quoteId" = q.id AND v.action = 'quote.viewed' AND v."createdAt" >= sent."sentAt"
+      )`;
+  return rows.map((row) => row.id);
+};
+
+// "Needs my action": approvals this person may decide (M10.5 rule) and their own quotes that are
+// ready to send or need attention.
+const needsActionOf = (actor: StaffActor, approvalRules: unknown): Prisma.QuoteWhereInput => {
+  if (actor.userId === null) return NOTHING;
+  const userId = actor.userId;
+  const notOwnRequest = parseRules(approvalRules).requireDifferentApprover
+    ? { OR: [{ requestedBy: null }, { requestedBy: { not: userId } }] }
+    : {};
+  return {
+    OR: [
+      ...(can(actor, "quote.approve")
+        ? [{ status: "PENDING_APPROVAL", currentVersion: { approvals: { some: { decision: null, ...notOwnRequest } } } }]
+        : []),
+      { assignedToUserId: userId, OR: [{ status: "APPROVED" }, { NOT: { attention: { equals: Prisma.DbNull } } }] },
+    ],
+  };
+};
+
+// URL view filters → Prisma conditions (list page and CSV export). Days count in shop time (M10.1).
+const viewFilters = async (
+  actor: StaffActor,
+  filters: ListFilters,
+  shop: { timezone: string; approvalRules: unknown } | null,
+  now = new Date(),
+): Promise<Prisma.QuoteWhereInput[]> => {
+  const and: Prisma.QuoteWhereInput[] = [];
+  if (filters.assigned) and.push(actor.userId === null ? NOTHING : { assignedToUserId: actor.userId });
+  if (filters.action) and.push(needsActionOf(actor, shop?.approvalRules));
+  if (filters.expiring) {
+    const until = addDaysEndOfDay(now, filters.expiring, shop?.timezone ?? "UTC");
+    and.push({ status: "SENT", expiresAt: { gte: now, lte: until } });
+  }
+  if (filters.notViewed) and.push({ id: { in: await notViewedQuoteIds(actor.shop) } });
+  return and;
+};
 
 // Search text → filters: "1042" or "Q-1042" is a quote number, anything else a company name.
 const searchFilters = async (actor: StaffActor, q: string | undefined, prefix: string): Promise<QuoteFilters> => {
@@ -345,5 +420,7 @@ export {
   setExpiry,
   setPoNumber,
   transition,
+  viewFilters,
+  viewQuery,
 };
-export type { QuoteAction, QuoteFilters, QuoteStatus };
+export type { ListFilters, QuoteAction, QuoteFilters, QuoteStatus };

@@ -59,6 +59,24 @@
       "viewed_one": "Buyer viewed yesterday",
       "viewed_other": "Buyer viewed {{count}} days ago",
       "notOpened": "Not opened yet"
+    },
+    "views": {
+      "all": "All",
+      "mine": "My quotes",
+      "action": "Needs my action",
+      "expiring": "Expiring this week",
+      "notViewed": "Sent, not opened",
+      "save": "Save view",
+      "saveHeading": "Save this view",
+      "saveBody": "Saves the current search and filters as a button above the list. Only you see it.",
+      "name": "View name",
+      "saveConfirm": "Save view",
+      "delete": "Delete view “{{name}}”",
+      "errors": {
+        "name": "Give the view a name of up to {{max}} characters.",
+        "noFilters": "Choose a search or filter first: “All” already shows every quote.",
+        "tooMany": "You can save up to {{max}} views. Delete one first."
+      }
     }
   },
   "newQuote": {
