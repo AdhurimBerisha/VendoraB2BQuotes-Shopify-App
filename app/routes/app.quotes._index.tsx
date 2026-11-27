@@ -8,6 +8,8 @@ import { formatDate } from "../lib/dates";
 import { downloadFrom } from "../lib/download";
 import { D, formatMoney } from "../lib/money";
 import { getActor } from "../models/actor.server";
+import { parseRules } from "../models/approval";
+import { type NextAction, nextAction } from "../models/next-action";
 import { can, requirePermission } from "../models/permissions";
 import { QUOTE_STATUSES } from "../models/quote";
 import { listFiltersSchema, listQuotes, quoteLabel, searchFilters } from "../models/quote.server";
@@ -34,6 +36,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     companyNames(actor.admin, actor.shop, [...new Set(quotes.map((quote) => quote.companyId))]),
   );
   const staffNames = new Map(staff.map((member) => [member.shopifyUserId, member.displayName]));
+  const viewer = {
+    userId: actor.userId,
+    canApprove: can(actor, "quote.approve"),
+    requireDifferentApprover: parseRules(shop?.approvalRules).requireDifferentApprover,
+  };
+  const now = new Date();
 
   return {
     quotes: quotes.map((quote) => ({
@@ -44,6 +52,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       total: formatMoney(quote.currentVersion?.total ?? D(0), quote.currencyCode, actor.locale),
       rep: quote.assignedToUserId === null ? "" : (staffNames.get(quote.assignedToUserId) ?? ""),
       updated: formatDate(quote.updatedAt, actor.locale, timezone),
+      next: nextAction(
+        {
+          ...quote,
+          approvalRequestedBy: quote.currentVersion?.approvals[0]?.requestedBy ?? null,
+        },
+        viewer,
+        timezone,
+        now,
+      ),
     })),
     nextCursor,
     canCreate: can(actor, "quote.create"),
@@ -154,6 +171,7 @@ export default function QuoteList() {
             <s-table-header listSlot="labeled" format="currency">
               {t("quotes.columns.total")}
             </s-table-header>
+            <s-table-header listSlot="inline">{t("quotes.columns.next")}</s-table-header>
             <s-table-header listSlot="labeled">{t("quotes.columns.rep")}</s-table-header>
             <s-table-header listSlot="labeled">{t("quotes.columns.updated")}</s-table-header>
           </s-table-header-row>
@@ -170,6 +188,9 @@ export default function QuoteList() {
                   <StatusBadge status={quote.status} />
                 </s-table-cell>
                 <s-table-cell>{quote.total}</s-table-cell>
+                <s-table-cell>
+                  <NextActionBadge next={quote.next} />
+                </s-table-cell>
                 <s-table-cell>{quote.rep}</s-table-cell>
                 <s-table-cell>{quote.updated}</s-table-cell>
               </s-table-row>
@@ -185,5 +206,23 @@ export default function QuoteList() {
     </s-page>
   );
 }
+
+const NEXT_TONE: Record<NextAction["code"], "info" | "success" | "warning" | "critical" | "neutral"> = {
+  attention: "critical",
+  yourApproval: "warning",
+  waitingApproval: "neutral",
+  readyToSend: "info",
+  expires: "warning",
+  viewed: "success",
+  notOpened: "neutral",
+};
+
+// M10.5: text, not colour only (a11y). Days are shop-local (M10.1).
+const NextActionBadge = ({ next }: { next: NextAction | null }) => {
+  const { t } = useTranslation();
+  if (!next) return null;
+  const count = "days" in next ? next.days : undefined;
+  return <s-badge tone={NEXT_TONE[next.code]}>{t(`quotes.next.${next.code}`, { count })}</s-badge>;
+};
 
 export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);

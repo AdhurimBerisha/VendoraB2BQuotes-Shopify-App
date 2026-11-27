@@ -44,7 +44,21 @@
       "status": "Status",
       "total": "Total",
       "rep": "Sales rep",
-      "updated": "Updated"
+      "updated": "Updated",
+      "next": "Next"
+    },
+    "next": {
+      "attention": "Needs attention",
+      "yourApproval": "Needs your approval",
+      "waitingApproval": "Waiting for approval",
+      "readyToSend": "Ready to send",
+      "expires_zero": "Expires today",
+      "expires_one": "Expires tomorrow",
+      "expires_other": "Expires in {{count}} days",
+      "viewed_zero": "Buyer viewed today",
+      "viewed_one": "Buyer viewed yesterday",
+      "viewed_other": "Buyer viewed {{count}} days ago",
+      "notOpened": "Not opened yet"
     }
   },
   "newQuote": {

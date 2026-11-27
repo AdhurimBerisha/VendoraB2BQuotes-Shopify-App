@@ -169,10 +169,32 @@ const listQuotes = async (
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: take + 1,
     ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
-    include: { currentVersion: { select: { total: true, versionNumber: true } } },
+    include: {
+      currentVersion: {
+        select: {
+          total: true,
+          versionNumber: true,
+          // M10.5: who asked for the pending approval (the list's next action).
+          approvals: { where: { decision: null }, orderBy: { createdAt: "desc" }, take: 1, select: { requestedBy: true } },
+        },
+      },
+    },
   });
+  const quotes = rows.slice(0, take);
+  // M10.5: last send and last buyer view per quote on this page.
+  const events = await db.auditEvent.groupBy({
+    by: ["quoteId", "action"],
+    where: { shop, quoteId: { in: quotes.map((quote) => quote.id) }, action: { in: ["quote.sent", "quote.viewed"] } },
+    _max: { createdAt: true },
+  });
+  const lastEvent = (quoteId: string, action: string) =>
+    events.find((event) => event.quoteId === quoteId && event.action === action)?._max.createdAt ?? null;
   return {
-    quotes: rows.slice(0, take),
+    quotes: quotes.map((quote) => ({
+      ...quote,
+      lastSentAt: lastEvent(quote.id, "quote.sent"),
+      lastViewedAt: lastEvent(quote.id, "quote.viewed"),
+    })),
     nextCursor: rows.length > take ? rows[take - 1].id : null,
   };
 };
